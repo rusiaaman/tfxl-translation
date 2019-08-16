@@ -13,7 +13,7 @@ from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 from tensorflow.gfile import Exists as exists
 import model
-import data_utils
+import data_utils_xlnet as data_utils
 import tpu_estimator
 
 import numpy as np
@@ -61,6 +61,7 @@ flags.DEFINE_string("warm_start_path", None,
            "If set, will clear Adam states."
            "Note that the new model_dir should be different"
            " from warm_start_path.")
+flags.DEFINE_integer("n_token", 32000, help="Vocab size")
 
 # Optimization paramenters
 flags.DEFINE_float("learning_rate", default=2.5e-4,
@@ -127,8 +128,6 @@ flags.DEFINE_bool("untie_r", default=False,
 # Adaptive Softmax / Embedding
 flags.DEFINE_bool("tie_weight", default=True,
       help="Tie embedding and softmax weight.")
-flags.DEFINE_integer("div_val", default=1,
-      help="Divide the embedding size by this val for each bin")
 flags.DEFINE_bool("proj_share_all_but_first", default=False,
       help="True to share all but first projs, False not to share.")
 flags.DEFINE_bool("proj_same_dim", default=True,
@@ -158,7 +157,11 @@ def metric_fn(loss):
   }
 
 
-def get_model_fn(n_token, cutoffs, train_bin_sizes, eval_bin_sizes):
+def get_model_fn():
+  cutoffs = []
+  train_bin_sizes = []
+  eval_bin_sizes = []
+  n_token = FLAGS.n_token
   def model_fn(features, labels, mode, params):
     is_training = (mode == tf.estimator.ModeKeys.TRAIN)
 
@@ -223,7 +226,7 @@ def get_model_fn(n_token, cutoffs, train_bin_sizes, eval_bin_sizes):
         is_training=is_training,
         mem_len=FLAGS.mem_len,
         cutoffs=cutoffs,
-        div_val=FLAGS.div_val,
+        div_val=1,
         tie_projs=tie_projs,
         input_perms=inp_perms,
         target_perms=tgt_perms,
@@ -328,11 +331,6 @@ def main(unused_argv):
 
   tf.logging.set_verbosity(tf.logging.INFO)
 
-  # Get corpus info
-  corpus_info = data_utils.get_corpus_info(FLAGS.corpus_info_path)
-  n_token = corpus_info["vocab_size"]
-  cutoffs = corpus_info["cutoffs"][1:-1]
-
   if FLAGS.save_steps == 0:
     FLAGS.save_steps = None
 
@@ -341,18 +339,17 @@ def main(unused_argv):
     train_input_fn, train_record_info = data_utils.get_input_fn(
         record_info_dir=FLAGS.record_info_dir,
         split="train",
-        per_host_bsz=FLAGS.train_batch_size // FLAGS.num_hosts,
-        tgt_len=FLAGS.tgt_len,
+        bsz_per_host=FLAGS.train_batch_size // FLAGS.num_hosts,
+        seq_len=FLAGS.tgt_len,
         num_core_per_host=FLAGS.num_core_per_host,
         num_hosts=FLAGS.num_hosts,
-        use_tpu=FLAGS.use_tpu)
-    train_bin_sizes = train_record_info["bin_sizes"]
+        use_tpu=FLAGS.use_tpu,
+        toeval=False)
     num_train_batch = train_record_info["num_batch"]
 
     # Get train cache function
     train_cache_fn = get_cache_fn(FLAGS.mem_len)
   else:
-    train_bin_sizes = []
     num_train_batch = None
     train_cache_fn = None
 
@@ -362,12 +359,12 @@ def main(unused_argv):
     eval_input_fn, eval_record_info = data_utils.get_input_fn(
         record_info_dir=FLAGS.record_info_dir,
         split=FLAGS.eval_split,
-        per_host_bsz=FLAGS.eval_batch_size // FLAGS.num_hosts,
-        tgt_len=FLAGS.tgt_len,
+        bsz_per_host=FLAGS.eval_batch_size // FLAGS.num_hosts,
+        seq_len=FLAGS.tgt_len,
         num_core_per_host=FLAGS.num_core_per_host,
         num_hosts=FLAGS.num_hosts,
-        use_tpu=FLAGS.use_tpu)
-    eval_bin_sizes = eval_record_info["bin_sizes"]
+        use_tpu=FLAGS.use_tpu,
+        toeval=True)
     num_eval_batch = eval_record_info["num_batch"]
 
     if FLAGS.max_eval_batch > 0:
@@ -375,11 +372,9 @@ def main(unused_argv):
 
     # Get eval cache function
     eval_cache_fn = get_cache_fn(FLAGS.mem_len)
-    model_fn = get_model_fn(n_token, cutoffs, train_bin_sizes, eval_bin_sizes)
   else:
     eval_cache_fn = None
-    model_fn = get_model_fn(n_token, cutoffs, train_bin_sizes, [])
-
+  model_fn = get_model_fn()
   ##### Create estimator
   # TPU Configuration
   tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(
