@@ -44,8 +44,6 @@ flags.DEFINE_string("data_dir", default="",
       help="Path to tf-records directory.")
 flags.DEFINE_string("record_info_dir", default="",
       help="Path to local directory containing filenames.txt.")
-flags.DEFINE_string("corpus_info_path", default="",
-      help="Path to corpus-info.json file.")
 flags.DEFINE_string("model_dir", default=None,
       help="Estimator model_dir.")
 flags.DEFINE_bool("do_eval", default=False,
@@ -128,10 +126,6 @@ flags.DEFINE_bool("untie_r", default=False,
 # Adaptive Softmax / Embedding
 flags.DEFINE_bool("tie_weight", default=True,
       help="Tie embedding and softmax weight.")
-flags.DEFINE_bool("proj_share_all_but_first", default=False,
-      help="True to share all but first projs, False not to share.")
-flags.DEFINE_bool("proj_same_dim", default=True,
-      help="Project the bin with the same dimension.")
 
 # Parameter initialization
 flags.DEFINE_enum("init", default="normal",
@@ -161,6 +155,7 @@ def get_model_fn():
   cutoffs = []
   train_bin_sizes = []
   eval_bin_sizes = []
+  proj_share_all_but_first = True
   n_token = FLAGS.n_token
   def model_fn(features, labels, mode, params):
     is_training = (mode == tf.estimator.ModeKeys.TRAIN)
@@ -202,7 +197,7 @@ def get_model_fn():
           seed=None)
 
     tie_projs = [False for _ in range(len(cutoffs) + 1)]
-    if FLAGS.proj_share_all_but_first:
+    if proj_share_all_but_first:
       for i in range(1, len(tie_projs)):
         tie_projs[i] = True
 
@@ -235,7 +230,7 @@ def get_model_fn():
         clamp_len=FLAGS.clamp_len,
         use_tpu=FLAGS.use_tpu,
         untie_r=FLAGS.untie_r,
-        proj_same_dim=FLAGS.proj_same_dim)
+        proj_same_dim=True)
 
     total_loss = tf.reduce_mean(loss)
 
