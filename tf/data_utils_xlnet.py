@@ -215,7 +215,7 @@ def create_data(_):
 
   if FLAGS.bi_data:
     tf.logging.info("Using bi data")
-    
+
   record_info = _create_data(FLAGS.task, task_file_paths, 
                              transliterate=FLAGS.transliterate, 
                              language_tag=FLAGS.language_tag,

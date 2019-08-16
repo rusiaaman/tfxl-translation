@@ -60,6 +60,8 @@ flags.DEFINE_string("warm_start_path", None,
            "Note that the new model_dir should be different"
            " from warm_start_path.")
 flags.DEFINE_integer("n_token", 32000, help="Vocab size")
+flags.DEFINE_bool("bi_data", False, help="Use bi data")
+flags.DEFINE_integer("num_passes", None, help="Number of passes for the dataset")
 
 # Optimization paramenters
 flags.DEFINE_float("learning_rate", default=2.5e-4,
@@ -164,7 +166,7 @@ def get_model_fn():
     batch_size = params["batch_size"]
 
     mems = params["cache"]
-    inp = tf.transpose(features["inputs"], [1, 0])
+    inp = tf.transpose(features["input"], [1, 0])
     tgt = tf.transpose(features["labels"], [1, 0])
 
     bin_sizes = train_bin_sizes if is_training else eval_bin_sizes
@@ -336,6 +338,8 @@ def main(unused_argv):
         split="train",
         bsz_per_host=FLAGS.train_batch_size // FLAGS.num_hosts,
         seq_len=FLAGS.tgt_len,
+        bi_data=FLAGS.bi_data,
+        num_passes=FLAGS.num_passes,
         num_core_per_host=FLAGS.num_core_per_host,
         num_hosts=FLAGS.num_hosts,
         toeval=False)
@@ -355,6 +359,8 @@ def main(unused_argv):
         split=FLAGS.eval_split,
         bsz_per_host=FLAGS.eval_batch_size // FLAGS.num_hosts,
         seq_len=FLAGS.tgt_len,
+        num_passes=FLAGS.num_passes,
+        bi_data=False,
         num_core_per_host=FLAGS.num_core_per_host,
         num_hosts=FLAGS.num_hosts,
         toeval=True)
