@@ -32,6 +32,8 @@ special_symbols = {
     "<mask>" : 6,
     "<eod>"  : 7,
     "<eop>"  : 8,
+    "<hi>"   : 9,
+    "<eng>"   : 10
 }
 
 VOCAB_SIZE = 32000
@@ -41,6 +43,8 @@ SEP_ID = special_symbols["<sep>"]
 MASK_ID = special_symbols["<mask>"]
 EOD_ID = special_symbols["<eod>"]
 EOP_ID = special_symbols["<eop>"]
+HIN_ID = special_symbols["<hi>"]
+ENG_ID = special_symbols["<eng>"]
 
 def _int64_feature(values):
   return tf.train.Feature(int64_list=tf.train.Int64List(value=values))
@@ -70,7 +74,7 @@ def format_filename_gen(prefix, bsz_per_host, seq_len, bi_data, suffix,
 
   return file_name
 
-def _create_data(idx, input_paths):
+def _create_data(idx, input_paths, transliterate=True, language_tag=True, major_language='english'):
   # Load sentence-piece model
   sp = spm.SentencePieceProcessor()
   sp.Load(FLAGS.sp_path)
@@ -95,7 +99,9 @@ def _create_data(idx, input_paths):
       else:
         if FLAGS.from_raw_text:
           cur_sent = preprocess_text(line.strip(), lower=FLAGS.uncased)
-          cur_sent = encode_ids(sp, cur_sent)
+          cur_sent = encode_ids(sp, cur_sent,
+                               transliterate=transliterate, language_tag=language_tag,
+                               eng_id=ENG_ID, hin_id=HIN_ID, major_language=major_language)
         else:
           cur_sent = list(map(int, line.strip().split()))
         if FLAGS.use_eop:
@@ -212,7 +218,10 @@ def create_data(_):
 
   tf.logging.info("Task %d process %d files: %s",
                   FLAGS.task, len(task_file_paths), task_file_paths)
-  record_info = _create_data(FLAGS.task, task_file_paths)
+  record_info = _create_data(FLAGS.task, task_file_paths, 
+                             transliterate=FLAGS.transliterate, 
+                             language_tag=FLAGS.language_tag,
+                             major_language=FLAGS.major_language)
 
   record_prefix = "record_info-{}-{}-{}".format(
       FLAGS.split, FLAGS.task, FLAGS.pass_id)
@@ -557,5 +566,11 @@ if __name__ == "__main__":
                        "using multiple workers to identify each worker.")
   flags.DEFINE_bool("eval", True,
                     help="In evaluation mode.")
+  flags.DEFINE_bool("transliterate", True,
+                    help="Transliterate to hindi.")
+  flags.DEFINE_bool("language_tag", True,
+                    help="Use language special symbol.")
+  flags.DEFINE_string("major_language", 'english',
+                    help="Major document lang english/hindi.")
   tf.logging.set_verbosity(tf.logging.INFO)
   tf.app.run(create_data)
