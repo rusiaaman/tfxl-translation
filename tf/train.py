@@ -332,7 +332,7 @@ def main(unused_argv):
   if not FLAGS.do_eval_only:
     # Get train input function
     train_input_fn, train_record_info = data_utils.get_input_fn(
-        record_info_dir=FLAGS.record_info_dir,
+        tfrecord_dir=FLAGS.record_info_dir,
         split="train",
         bsz_per_host=FLAGS.train_batch_size // FLAGS.num_hosts,
         seq_len=FLAGS.tgt_len,
@@ -352,7 +352,7 @@ def main(unused_argv):
     assert FLAGS.num_hosts == 1
     # Get eval input function
     eval_input_fn, eval_record_info = data_utils.get_input_fn(
-        record_info_dir=FLAGS.record_info_dir,
+        tfrecord_dir=FLAGS.record_info_dir,
         split=FLAGS.eval_split,
         bsz_per_host=FLAGS.eval_batch_size // FLAGS.num_hosts,
         seq_len=FLAGS.tgt_len,
