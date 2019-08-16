@@ -66,7 +66,8 @@ def preprocess_text(inputs, lower=False, remove_space=True, keep_accents=False):
     outputs = ' '.join(inputs.strip().split())
   else:
     outputs = inputs
-  outputs = outputs.replace("``", '"').replace("''", '"')
+  outputs = outputs.replace("``", '"').replace("''", '"').replace('”','"')\
+          .replace("“",'"').replace("‘","'")
 
   if six.PY2 and isinstance(outputs, str):
     outputs = outputs.decode('utf-8')
@@ -80,8 +81,7 @@ def preprocess_text(inputs, lower=False, remove_space=True, keep_accents=False):
   return outputs
 
 
-def encode_pieces(sp_model, text, return_unicode=True, sample=False, 
-                  transliterate=True, language_tag=True):
+def encode_pieces(sp_model, text, return_unicode=True, sample=False):
   # return_unicode is used only for py2
 
   # note(zhiliny): in some systems, sentencepiece only accepts str for py2
@@ -147,7 +147,7 @@ def encode_ids(sp, text, transliterate = False,
     for sub,tosub in SUBSTITUTES.items():
       text = text.replace(sub,tosub)
     dats,langs = split_on_language(text,major_language=major_language)
-    trans = list(map(lambda x: its.to_itrans(x,'hi'),dats))
+    trans = list(map(lambda x: its.to_itrans(x,'hi') if x.strip() else '',dats))
     enfn = partial(encode_pieces,return_unicode=return_unicode,
                       sample=sample)
     transpieces = list(map(lambda x: enfn(sp,x),trans))
@@ -198,5 +198,10 @@ if __name__ == '__main__':
   print_(encode_pieces(sp, 'समर्थक-वर्ग संक्षेपण १३०, छोड़ देना'))
   print(encode_ids(sp, 'समर्थक-वर्ग संक्षेपण १३०, छोड़ देना'))
 
-
-
+  print_('')
+  print_('समर्थक-वर्ग संक्षेपण १३०, छोड़ देना')
+  print_(encode_pieces(sp, 'समर्थक-वर्ग संक्षेपण १३०, छोड़ देना'))
+  print(encode_ids(sp, 'समर्थक-वर्ग संक्षेपण १३०, छोड़ देना', transliterate=True,
+                  language_tag=True, hin_id=7, eng_id=8))
+  print(sp.decode_ids(encode_ids(sp, 'समर्थक-वर्ग संक्षेपण १३०, छोड़ देना', transliterate=True,
+                  language_tag=True, hin_id=7, eng_id=8)))

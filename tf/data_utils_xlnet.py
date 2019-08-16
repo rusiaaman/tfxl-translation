@@ -26,21 +26,15 @@ special_symbols = {
     "<unk>"  : 0,
     "<s>"    : 1,
     "</s>"   : 2,
-    "<cls>"  : 3,
-    "<sep>"  : 4,
-    "<pad>"  : 5,
-    "<mask>" : 6,
-    "<eod>"  : 7,
-    "<eop>"  : 8,
-    "<hi>"   : 9,
-    "<eng>"   : 10
+    "<pad>"  : 3,
+    "<eod>"  : 4,
+    "<eop>"  : 5,
+    "<hi>"   : 6,
+    "<eng>"   : 7
 }
 
 VOCAB_SIZE = 32000
 UNK_ID = special_symbols["<unk>"]
-CLS_ID = special_symbols["<cls>"]
-SEP_ID = special_symbols["<sep>"]
-MASK_ID = special_symbols["<mask>"]
 EOD_ID = special_symbols["<eod>"]
 EOP_ID = special_symbols["<eop>"]
 HIN_ID = special_symbols["<hi>"]
@@ -218,6 +212,10 @@ def create_data(_):
 
   tf.logging.info("Task %d process %d files: %s",
                   FLAGS.task, len(task_file_paths), task_file_paths)
+
+  if FLAGS.bi_data:
+    tf.logging.info("Using bi data")
+    
   record_info = _create_data(FLAGS.task, task_file_paths, 
                              transliterate=FLAGS.transliterate, 
                              language_tag=FLAGS.language_tag,
@@ -452,7 +450,6 @@ def get_input_fn(
       seq_len=seq_len,
       bi_data=bi_data,
       suffix="json",
-      reuse_len=reuse_len,
       uncased=uncased)
 
   record_info = {"num_batch": 0, "filenames": []}
