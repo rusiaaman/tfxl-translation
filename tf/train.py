@@ -338,7 +338,6 @@ def main(unused_argv):
         seq_len=FLAGS.tgt_len,
         num_core_per_host=FLAGS.num_core_per_host,
         num_hosts=FLAGS.num_hosts,
-        use_tpu=FLAGS.use_tpu,
         toeval=False)
     num_train_batch = train_record_info["num_batch"]
 
@@ -358,7 +357,6 @@ def main(unused_argv):
         seq_len=FLAGS.tgt_len,
         num_core_per_host=FLAGS.num_core_per_host,
         num_hosts=FLAGS.num_hosts,
-        use_tpu=FLAGS.use_tpu,
         toeval=True)
     num_eval_batch = eval_record_info["num_batch"]
 
