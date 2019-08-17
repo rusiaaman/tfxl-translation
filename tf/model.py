@@ -312,7 +312,7 @@ def mul_adaptive_logsoftmax(hidden, target, n_token, d_embed, d_proj, cutoffs,
                             params, tie_projs,
                             initializer=None, proj_initializer=None,
                             div_val=1, perms=None, proj_same_dim=True,
-                            scope='adaptive_softmax',
+                            scope='adaptive_softmax',infer_final_logit=False,
                             **kwargs):
   def _logit(x, W, b, proj):
     y = x
@@ -332,10 +332,16 @@ def mul_adaptive_logsoftmax(hidden, target, n_token, d_embed, d_proj, cutoffs,
       softmax_b = tf.get_variable('bias', [n_token],
                                   initializer=tf.zeros_initializer())
       output = _logit(hidden, params_W, softmax_b, params_projs)
+      if infer_final_logit:
+        return output[-1]
+
       nll = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=target,
                                                            logits=output)
       nll = tf.reduce_mean(nll)
     else:
+      if infer_final_logit:
+        raise Exception("Inference in adaptive softmax not yet supported")
+
       total_loss, total_cnt = 0, 0
       cutoff_ends = [0] + cutoffs + [n_token]
       for i in range(len(cutoff_ends) - 1):
@@ -440,7 +446,7 @@ def transformer(dec_inp, target, mems, n_token, n_layer, d_model, d_embed,
                 same_length=False, clamp_len=-1, use_tpu=True,
                 input_perms=None, target_perms=None, head_target=None,
                 untie_r=False, proj_same_dim=True,
-                scope='transformer'):
+                scope='transformer',infer=False):
   """
   cutoffs: a list of python int. Cutoffs for adaptive softmax.
   tie_projs: a list of python bools. Whether to tie the projections.
@@ -527,20 +533,24 @@ def transformer(dec_inp, target, mems, n_token, n_layer, d_model, d_embed,
 
     logsoftmax_fn = (mul_adaptive_logsoftmax if use_tpu else
                      mask_adaptive_logsoftmax)
-    loss = logsoftmax_fn(
-        hidden=output,
-        target=target,
-        n_token=n_token,
-        d_embed=d_embed,
-        d_proj=d_model,
-        cutoffs=cutoffs,
-        params=shared_params,
-        tie_projs=tie_projs,
-        initializer=initializer,
-        proj_initializer=proj_initializer,
-        div_val=div_val,
-        perms=target_perms,
-        head_target=head_target,
-        proj_same_dim=proj_same_dim)
-    return loss, new_mems
+
+    maybe_loss_or_logit = logsoftmax_fn(
+          hidden=output,
+          target=target,
+          n_token=n_token,
+          d_embed=d_embed,
+          d_proj=d_model,
+          cutoffs=cutoffs,
+          params=shared_params,
+          tie_projs=tie_projs,
+          initializer=initializer,
+          proj_initializer=proj_initializer,
+          div_val=div_val,
+          perms=target_perms,
+          head_target=head_target,
+          proj_same_dim=proj_same_dim,
+          infer_final_logit=infer)
+    
+    return maybe_loss_or_logit, new_mems
+    
 
