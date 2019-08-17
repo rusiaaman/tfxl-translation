@@ -74,7 +74,7 @@ def preprocess_text(inputs, lower=False, remove_space=True, keep_accents=False):
 
   if not keep_accents:
     outputs = unicodedata.normalize('NFKD', outputs)
-    outputs = ''.join([c for c in outputs if not unicodedata.combining(c)])
+    outputs = ''.join([c for c in outputs if not (unicodedata.combining(c) and not is_hindi(c))])
   if lower:
     outputs = outputs.lower()
 
