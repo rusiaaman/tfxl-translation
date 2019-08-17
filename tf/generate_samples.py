@@ -15,7 +15,7 @@ import sentencepiece as spm
 import collections
 
 from prepro_utils import preprocess_text, encode_ids
-
+import model
 
 special_symbols = {
     "<unk>"  : 0,
@@ -52,22 +52,23 @@ parser.add_argument("--d_head", default=50, type=int,
       help="Dimension of each attention head.")
 parser.add_argument("--d_inner", default=1000, type=int,
       help="Dimension of inner hidden size in positionwise feed-forward.")
-flags.DEFINE_bool("--untie_r", default=False,
+parser.add_argument("--untie_r", action='store_true',
       help="untie r_w_bias and r_r_bias")
 parser.add_argument("--clamp_len", default=-1,
                     help="Clamp length", type=int)
 parser.add_argument("--same_length", default=False,
                     help="Same length attention", action='store_true')
-parser.add_argument("--tie_weight", action='store_true',
+parser.add_argument("--tie_weight", type=bool, default=True,
       help="Tie embedding and softmax weight.")
 # Data and memory
+parser.add_argument("--n_token", default=32000, help='vocab size', type=int)
 parser.add_argument("--batch_size", default=1, help='batch size', type=int)
 parser.add_argument("--max_mem_length", default=128,
                     help="Max sequence length for cached hidden states"
                     " which each predicted token is conditioned upon"
                     ". Directly increases the memory requirement", type=int)
 parser.add_argument("--uncased", default=False,
-                    help="Use uncased inputs or not.", action='store_true')
+                    help="Use uncased inputs or not.", type=bool)
 
 # I/O paths
 parser.add_argument("--init_checkpoint", default=None,
@@ -105,7 +106,7 @@ parser.add_argument(
     type=int)
 parser.add_argument("--temperature", default=1,
                     help="Scaling factor for logits", type=int)
-parser.add_argument("--num_toks_pred", default=1024,
+parser.add_argument("--num_toks_pred", default=128,
                     help="Number of tokens to predict", type=int)
 parser.add_argument("--bidirectional_eachstep", help="Compute bidirectional"
                     "attention every step. Consumes a lot of time but better results",
@@ -215,11 +216,11 @@ def get_logits(features,mems):
         n_head=FLAGS.n_head,
         d_head=FLAGS.d_head,
         d_inner=FLAGS.d_inner,
-        dropout=FLAGS.dropout,
-        dropatt=FLAGS.dropatt,
+        dropout=0,
+        dropatt=0,
         initializer=initializer,
         is_training=is_training,
-        mem_len=FLAGS.mem_len,
+        mem_len=FLAGS.max_mem_length,
         cutoffs=cutoffs,
         div_val=1,
         tie_projs=tie_projs,
@@ -228,7 +229,7 @@ def get_logits(features,mems):
         head_target=head_tgt,
         same_length=FLAGS.same_length,
         clamp_len=FLAGS.clamp_len,
-        use_tpu=True,
+        use_tpu=FLAGS.use_tpu,
         untie_r=FLAGS.untie_r,
         proj_same_dim=True,
         infer=True)
@@ -318,7 +319,7 @@ def prediction_graph():
     # Calculating hidden states of inputs and getting latest logit
     logits,mems = get_logits(features,mems=None)
     batch_size = tf.shape(mems[0])[1]
-    logits = tf.reshape(logits,(batch_size,1,:))
+    logits = tf.reshape(logits,(batch_size,1,-1))
     latest_toks,latest_confs = sample_token(logits) 
     all_confs = latest_confs
     all_toks = latest_toks
@@ -326,7 +327,6 @@ def prediction_graph():
     def cond(*_):
         """Dummy condition since we stop based on iteration"""
         return True
-
     def body(mems, latest_toks, all_toks, all_confs):
         """The main body of sampling loop.
         """
@@ -335,20 +335,17 @@ def prediction_graph():
           'input': latest_toks
         }
         logits,mems = get_logits(features,mems=mems)
-        logits = tf.reshape(logits,(batch_size,1,:))
+        logits = tf.reshape(logits,(batch_size,1,-1))
         latest_toks,latest_confs = sample_token(logits) 
         all_confs = tf.concat([all_confs,latest_confs],axis=-1)
         all_toks = tf.concat([all_toks,latest_toks],axis=-1)
 
-        return mems, latest_toks, all_toks, all_confs
-
-
-    mems, latest_toks, all_toks, all_confs = body(mems, latest_toks, all_toks, all_confs)
+        return [mems, latest_toks, all_toks, all_confs]
 
     args = tf.while_loop(
         cond=cond,
         body=body,
-        maximum_iterations=FLAGS.num_toks_pred - 1,
+        maximum_iterations=FLAGS.num_toks_pred - 2,
         loop_vars=[mems, latest_toks, all_toks, all_confs],
         shape_invariants=[
             [tf.TensorShape([None, None, None]) for _ in range(len(mems))],
@@ -484,7 +481,7 @@ def main():
 
     predictions, features = prediction_graph()
     gpu_options = tf.GPUOptions(allow_growth=True)
-    model_utils.init_from_checkpoint(FLAGS, global_vars=False)
+    init_from_checkpoint(FLAGS, global_vars=False)
 
     with tf.Session(config=tf.ConfigProto(allow_soft_placement=True,
                                           gpu_options=gpu_options)) as sess:
@@ -564,17 +561,18 @@ def main():
                         f.write(out)
                         f.write("\n==================================\n")
 
-
+# Fixed flags
+FLAGS.use_tpu = False
+FLAGS.use_bfloat16 = False
+FLAGS.dropout = 0
+FLAGS.dropatt = 0
+FLAGS.init = "normal"
+FLAGS.init_std = 0.02
+FLAGS.init_range = 0.1
+FLAGS.proj_init_std = 0.01
 
 if __name__ == "__main__":
 
-    # Fixed flags
-    FLAGS.use_tpu = False
-    FLAGS.use_bfloat16 = False
-    FLAGS.dropout = 0
-    FLAGS.dropatt = 0
-    FLAGS.init = "normal"
-    FLAGS.init_std = 0.02
-    FLAGS.init_range = 0.1
+    
     print("Args: {}".format(vars(FLAGS)))
     main()

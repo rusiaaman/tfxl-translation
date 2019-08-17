@@ -231,7 +231,7 @@ def mask_adaptive_logsoftmax(hidden, target, n_token, d_embed, d_proj, cutoffs,
                              initializer=None, proj_initializer=None,
                              div_val=1, scope='adaptive_softmax',
                              proj_same_dim=True,
-                             return_mean=True, **kwargs):
+                             return_mean=True, infer_final_logit=False, **kwargs):
   def _logit(x, W, b, proj):
     y = x
     if proj is not None:
@@ -251,9 +251,15 @@ def mask_adaptive_logsoftmax(hidden, target, n_token, d_embed, d_proj, cutoffs,
       softmax_b = tf.get_variable('bias', [n_token],
                                   initializer=tf.zeros_initializer())
       output = _logit(hidden, params_W, softmax_b, params_projs)
+      if infer_final_logit:
+        return output[-1]
+        
       nll = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=target,
                                                            logits=output)
     else:
+      if infer_final_logit:
+        raise Exception("inference not available for adaptive softmax")
+
       cutoff_ends = [0] + cutoffs + [n_token]
       nll = tf.zeros_like(target, dtype=tf.float32)
       for i in range(len(cutoff_ends) - 1):
@@ -456,7 +462,7 @@ def transformer(dec_inp, target, mems, n_token, n_layer, d_model, d_embed,
         Only used in the adaptive setting.
   """
   new_mems = []
-  with tf.variable_scope(scope):
+  with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):
     if untie_r:
       r_w_bias = tf.get_variable('r_w_bias', [n_layer, n_head, d_head],
                                initializer=initializer)
