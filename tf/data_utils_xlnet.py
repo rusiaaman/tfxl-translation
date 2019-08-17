@@ -293,7 +293,7 @@ def create_tfrecords(save_dir, basename, data, bsz_per_host, seq_len,
 
   data_len = data.shape[1]
   i = 0
-  while i + seq_len <= data_len:
+  while i + seq_len+1 <= data_len:
     if num_batch % 500 == 0:
       tf.logging.info("Processing batch %d", num_batch)
 
