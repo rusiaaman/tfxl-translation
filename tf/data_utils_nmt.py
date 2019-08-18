@@ -52,7 +52,7 @@ def _float_feature(values):
 
 
 
-def format_filename_gen(prefix, seq_len, bi_data, suffix,
+def format_filename_gen(prefix, seq_len, tgt_len, bi_data, suffix,
                     src_lang,tgt_lang,uncased=False,):
   """docs."""
 
@@ -66,9 +66,9 @@ def format_filename_gen(prefix, seq_len, bi_data, suffix,
     bi_data_str = "uni"
 
 
-  file_name = "{}-{}_{}.seqlen-{}.{}{}.gen.{}".format(
+  file_name = "{}-{}_{}.seqlen-{}.tgtlen-{}.{}{}.gen.{}".format(
       src_lang[:2],tgt_lang[:2],
-      prefix, seq_len, uncased_str, 
+      prefix, seq_len, tgt_len, uncased_str, 
       bi_data_str, suffix)
 
   return file_name
@@ -171,6 +171,7 @@ def _create_data(idx, src_file, tgt_file, src_lang, tgt_lang,
       basename="{}-{}-{}".format(FLAGS.split, idx, FLAGS.pass_id),
       data=(input_data,target_data,target_mask_data,input_mask_data),
       seq_len=FLAGS.seq_len,
+      tgt_len=FLAGS.tgt_len,
       bi_data=FLAGS.bi_data,
       sp=sp
   )
@@ -186,9 +187,6 @@ def _create_data(idx, src_file, tgt_file, src_lang, tgt_lang,
 
 def create_data(_):
   # Validate FLAGS
-  assert FLAGS.bsz_per_host % FLAGS.num_core_per_host == 0
-  if not FLAGS.use_tpu:
-    FLAGS.num_core_per_host = 1  # forced to be one
 
   # Make workdirs
   if not tf.gfile.Exists(FLAGS.save_dir):
@@ -205,8 +203,6 @@ def create_data(_):
   if FLAGS.task == 0:
     corpus_info = {
         "vocab_size": VOCAB_SIZE,
-        "bsz_per_host": FLAGS.bsz_per_host,
-        "num_core_per_host": FLAGS.num_core_per_host,
         "seq_len": FLAGS.seq_len,
         "uncased": FLAGS.uncased,
         "bi_data": FLAGS.bi_data,
@@ -236,6 +232,7 @@ def create_data(_):
   record_name = format_filename_gen(
       prefix=record_prefix,
       seq_len=FLAGS.seq_len,
+      seq_len=FLAGS.tgt_len,
       bi_data=FLAGS.bi_data,
       suffix="json",
       uncased=FLAGS.uncased,
@@ -249,7 +246,7 @@ def create_data(_):
 
 
 def create_tfrecords(save_dir, basename, data, seq_len,
-                     bi_data, sp):
+                     tgt_len, bi_data, sp):
   input_data,target_data,target_mask_data,input_mask_data = data
 
   if bi_data:
@@ -258,6 +255,7 @@ def create_tfrecords(save_dir, basename, data, seq_len,
   file_name = format_filename_gen(
       prefix=basename,
       seq_len=seq_len,
+      tgt_len=tgt_len,
       bi_data=bi_data,
       suffix="tfrecords",
       uncased=FLAGS.uncased,
@@ -402,10 +400,14 @@ def get_input_fn(
     toeval=False,
     tgt_len=None):
 
+  if tgt_len is None:
+    tgt_len = seq_len//2
+
   # Merge all record infos into a single one
   record_glob_base = format_filename_gen(
       prefix="record_info-{}-*".format(split),
       seq_len=seq_len,
+      tgt_len=tgt_len,
       bi_data=bi_data,
       suffix="json",
       uncased=uncased,
@@ -496,8 +498,6 @@ def get_input_fn(
 if __name__ == "__main__":
   FLAGS = flags.FLAGS
   flags.DEFINE_bool("use_tpu", True, help="whether to use TPUs")
-  flags.DEFINE_integer("bsz_per_host", 32, help="batch size per host.")
-  flags.DEFINE_integer("num_core_per_host", 8, help="num TPU cores per host.")
   flags.DEFINE_integer("seq_len", 512,
                        help="Sequence length.")
   flags.DEFINE_integer("tgt_len", None,
