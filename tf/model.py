@@ -327,19 +327,19 @@ def mask_adaptive_logsoftmax(hidden, target, n_token, d_embed, d_proj, cutoffs,
 def get_tgt_logits(logits,target_mask,qlen=None,tgt_len=None):
   """
   input:
-    logits: [qlen+tlen,bsz,num_class]
-    target_mask: [tlen,bsz]
+    logits: [qlen+tgt_len,bsz,num_class]
+    target_mask: [tgt_len,bsz]
   output:
-    tgt_logits: [tlen,bsz,num_class]
+    tgt_logits: [tgt_len,bsz,num_class]
 
   """
   if target_mask is None:
     return logits
-  if tlen is None:
-    tlen = tf.shape(target_mask)[0]
+  if tgt_len is None:
+    tgt_len = tf.shape(target_mask)[0]
   if qlen is None:
     qlen = tf.shape(logits)[0]
-  return logits[qlen+1:qlen+tlen+1,:,:]
+  return logits[qlen-tgt_len:qlen,:,:]
 
 
 def mul_adaptive_logsoftmax(hidden, target, n_token, d_embed, d_proj, cutoffs,
@@ -463,7 +463,7 @@ def _create_mask(qlen, mlen, batch_size, same_length=False, target_mask=None,
                    bidirectional_mask=False,input_mask=None,tf_float=tf.float32,tgt_len=None):
     """If bidirectional_mask and If target mask is available, we let all non target tokens attend
     each other.
-    target_mask: None or [tlen,bsz], where tlen is target length. tlen<qlen. 1s for target tokens
+    target_mask: None or [tgt_len,bsz], where tgt_len is target length. tgt_len<qlen. 1s for target tokens
     """
 
     if bidirectional_mask:
@@ -471,9 +471,9 @@ def _create_mask(qlen, mlen, batch_size, same_length=False, target_mask=None,
       assert input_mask is not None, "Input mask has to be provided for bidirectional_mask"
       target_mask = tf.transpose(target_mask,(1,0))
       if tgt_len is None:
-        tlen = tf.shape(target_mask)[1]
+        tgt_len = tf.shape(target_mask)[1]
       # Extending target mask to shape (bsz,qlen)
-      target_mask_e = tf.concat([tf.zeros((batch_size,qlen-tlen),dtype=tf_float),target_mask],axis=-1)
+      target_mask_e = tf.concat([tf.zeros((batch_size,qlen-tgt_len),dtype=tf_float),target_mask],axis=-1)
 
       # Input masks are ones for all valid tokens
       input_mask = tf.transpose(input_mask,(1,0))
@@ -492,7 +492,7 @@ def _create_mask(qlen, mlen, batch_size, same_length=False, target_mask=None,
 
     if same_length:
       mask_l = tf.matrix_band_part(attn_mask, -1, 0)
-      ret = tf.concat([ret[:, :qlen] + mask_l - mask_dia, ret[:, qlen:]], -1)
+      ret = tf.concat([ret[:, :, :qlen] + mask_l - mask_dia, ret[:, :, qlen:]], -1)
 
     if bidirectional_mask:
       # mask attention to invalid tokens
