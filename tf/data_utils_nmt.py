@@ -468,8 +468,8 @@ def get_input_fn(
     record_info["filenames"] += cur_record_info["filenames"]
 
   # For nmt num_batch variable is total examples, divide by bsz_per_host
-  record_info["num_batch"] = record_info["num_batch"]/bsz_per_host
-  
+  record_info["num_batch"] = record_info["num_batch"]//bsz_per_host
+
   tf.logging.info("Total number of batches: %d",
                   record_info["num_batch"])
   tf.logging.info("Total number of files: %d",
