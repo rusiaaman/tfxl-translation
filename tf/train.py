@@ -141,6 +141,10 @@ flags.DEFINE_float("init_range", default=0.1,
 #NMT
 flags.DEFINE_bool("nmt",default=False,
       help="To run machine translation")
+flags.DEFINE_string("src_lang",default=None,
+      help="To run machine translation")
+flags.DEFINE_string("tgt_lang",default=None,
+      help="To run machine translation")
 flags.DEFINE_bool("bi_mask",default=False,
       help="Use bidirectional mask for source tokens")
 flags.DEFINE_integer("tgt_len",default=None,
@@ -343,8 +347,14 @@ def main(unused_argv):
 
   if FLAGS.nmt:
     import data_utils_nmt as data_utils
+    kwargs = {
+      'src_lang': FLAGS.src_lang,
+      'tgt_lang': FLAGS.tgt_lang,
+      'tgt_len': FLAGS.tgt_len,
+    }
   else:
     import data_utils_xlnet as data_utils
+    kwargs = {}
 
   tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -362,7 +372,8 @@ def main(unused_argv):
         num_passes=FLAGS.num_passes,
         num_core_per_host=FLAGS.num_core_per_host,
         num_hosts=FLAGS.num_hosts,
-        toeval=False)
+        toeval=False,
+        **kwargs)
     num_train_batch = train_record_info["num_batch"]
 
     # Get train cache function
@@ -383,7 +394,8 @@ def main(unused_argv):
         bi_data=False,
         num_core_per_host=FLAGS.num_core_per_host,
         num_hosts=FLAGS.num_hosts,
-        toeval=True)
+        toeval=True,
+        **kwargs)
     num_eval_batch = eval_record_info["num_batch"]
 
     if FLAGS.max_eval_batch > 0:
