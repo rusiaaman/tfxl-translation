@@ -13,7 +13,6 @@ from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 from tensorflow.gfile import Exists as exists
 import model
-import data_utils_xlnet as data_utils
 import tpu_estimator
 
 import numpy as np
@@ -140,6 +139,8 @@ flags.DEFINE_float("proj_init_std", default=0.01,
 flags.DEFINE_float("init_range", default=0.1,
       help="Initialization std when init is uniform.")
 #NMT
+flags.DEFINE_bool("nmt",default=False,
+      help="To run machine translation")
 flags.DEFINE_bool("bi_mask",default=False,
       help="Use bidirectional mask for source tokens")
 flags.DEFINE_integer("tgt_len",default=None,
@@ -339,6 +340,11 @@ def get_cache_fn(mem_len):
 
 def main(unused_argv):
   del unused_argv  # Unused
+
+  if FLAGS.nmt:
+    import data_utils_xlnet as data_utils
+  else:
+    import data_utils_nmt as data_utils
 
   tf.logging.set_verbosity(tf.logging.INFO)
 
