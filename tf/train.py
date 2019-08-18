@@ -342,9 +342,9 @@ def main(unused_argv):
   del unused_argv  # Unused
 
   if FLAGS.nmt:
-    import data_utils_xlnet as data_utils
-  else:
     import data_utils_nmt as data_utils
+  else:
+    import data_utils_xlnet as data_utils
 
   tf.logging.set_verbosity(tf.logging.INFO)
 
