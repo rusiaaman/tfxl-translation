@@ -74,7 +74,7 @@ def rel_multihead_attn(w, r, r_w_bias, r_r_bias, attn_mask, mems, d_model,
     BD = rel_shift(BD)
 
     attn_score = (AC + BD) * scale
-    attn_mask_t = attn_mask[:, :, None, None]
+    attn_mask_t = attn_mask[:,:,:,None]
     attn_score = attn_score * (1 - attn_mask_t) - 1e30 * attn_mask_t
 
     attn_prob = tf.nn.softmax(attn_score, 1)
@@ -231,7 +231,9 @@ def mask_adaptive_logsoftmax(hidden, target, n_token, d_embed, d_proj, cutoffs,
                              initializer=None, proj_initializer=None,
                              div_val=1, scope='adaptive_softmax',
                              proj_same_dim=True,
-                             return_mean=True, infer_final_logit=False, **kwargs):
+                             return_mean=True, infer_final_logit=False,
+                            target_mask=None,tgt_len=None,qlen=None,
+                            **kwargs):
   def _logit(x, W, b, proj):
     y = x
     if proj is not None:
@@ -251,14 +253,22 @@ def mask_adaptive_logsoftmax(hidden, target, n_token, d_embed, d_proj, cutoffs,
       softmax_b = tf.get_variable('bias', [n_token],
                                   initializer=tf.zeros_initializer())
       output = _logit(hidden, params_W, softmax_b, params_projs)
+      
+
+      tgt_logits = get_tgt_logits(output,target_mask,qlen=qlen,tgt_len=tgt_len)
+
       if infer_final_logit:
-        return output[-1]
-        
+        return tgt_logits[-1]
+
       nll = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=target,
-                                                           logits=output)
+                                                           logits=tgt_logits)
+      nll = nll*target_mask
+      nll = tf.reduce_sum(nll)/tf.reduce_sum(target_mask)
     else:
       if infer_final_logit:
         raise Exception("inference not available for adaptive softmax")
+      if target_mask is not None:
+        raise Exception("Target masking not available for adaptive_softmax")
 
       cutoff_ends = [0] + cutoffs + [n_token]
       nll = tf.zeros_like(target, dtype=tf.float32)
@@ -314,11 +324,30 @@ def mask_adaptive_logsoftmax(hidden, target, n_token, d_embed, d_proj, cutoffs,
   return nll
 
 
+def get_tgt_logits(logits,target_mask,qlen=None,tgt_len=None):
+  """
+  input:
+    logits: [qlen+tlen,bsz,num_class]
+    target_mask: [tlen,bsz]
+  output:
+    tgt_logits: [tlen,bsz,num_class]
+
+  """
+  if target_mask is None:
+    return logits
+  if tlen is None:
+    tlen = tf.shape(target_mask)[0]
+  if qlen is None:
+    qlen = tf.shape(logits)[0]
+  return logits[qlen+1:qlen+tlen+1,:,:]
+
+
 def mul_adaptive_logsoftmax(hidden, target, n_token, d_embed, d_proj, cutoffs,
                             params, tie_projs,
                             initializer=None, proj_initializer=None,
                             div_val=1, perms=None, proj_same_dim=True,
                             scope='adaptive_softmax',infer_final_logit=False,
+                            target_mask=None,tgt_len=None,qlen=None,
                             **kwargs):
   def _logit(x, W, b, proj):
     y = x
@@ -338,15 +367,22 @@ def mul_adaptive_logsoftmax(hidden, target, n_token, d_embed, d_proj, cutoffs,
       softmax_b = tf.get_variable('bias', [n_token],
                                   initializer=tf.zeros_initializer())
       output = _logit(hidden, params_W, softmax_b, params_projs)
+
+      tgt_logits = get_tgt_logits(output,target_mask,qlen=qlen,tgt_len=tgt_len)
+
       if infer_final_logit:
-        return output[-1]
+        return tgt_logits[-1]
 
       nll = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=target,
-                                                           logits=output)
-      nll = tf.reduce_mean(nll)
+                                                           logits=tgt_logits)
+      nll = nll*target_mask
+      nll = tf.reduce_sum(nll)/tf.reduce_sum(target_mask)
+
     else:
       if infer_final_logit:
         raise Exception("Inference in adaptive softmax not yet supported")
+      if target_mask is not None:
+        raise Exception("Target masking not available for adaptive_softmax")
 
       total_loss, total_cnt = 0, 0
       cutoff_ends = [0] + cutoffs + [n_token]
@@ -423,16 +459,50 @@ def mul_adaptive_logsoftmax(hidden, target, n_token, d_embed, d_proj, cutoffs,
   return nll
 
 
-def _create_mask(qlen, mlen, same_length=False):
-  attn_mask = tf.ones([qlen, qlen])
-  mask_u = tf.matrix_band_part(attn_mask, 0, -1)
-  mask_dia = tf.matrix_band_part(attn_mask, 0, 0)
-  attn_mask_pad = tf.zeros([qlen, mlen])
-  ret = tf.concat([attn_mask_pad, mask_u - mask_dia], 1)
-  if same_length:
-    mask_l = tf.matrix_band_part(attn_mask, -1, 0)
-    ret = tf.concat([ret[:, :qlen] + mask_l - mask_dia, ret[:, qlen:]], 1)
-  return ret
+def _create_mask(qlen, mlen, batch_size, same_length=False, target_mask=None, 
+                   bidirectional_mask=False,input_mask=None,tf_float=tf.float32,tgt_len=None):
+    """If bidirectional_mask and If target mask is available, we let all non target tokens attend
+    each other.
+    target_mask: None or [tlen,bsz], where tlen is target length. tlen<qlen. 1s for target tokens
+    """
+
+    if bidirectional_mask:
+      assert target_mask is not None, "Target mask has to be provided for bidirectional_mask"
+      assert input_mask is not None, "Input mask has to be provided for bidirectional_mask"
+      target_mask = tf.transpose(target_mask,(1,0))
+      if tgt_len is None:
+        tlen = tf.shape(target_mask)[1]
+      # Extending target mask to shape (bsz,qlen)
+      target_mask_e = tf.concat([tf.zeros((batch_size,qlen-tlen),dtype=tf_float),target_mask],axis=-1)
+
+      # Input masks are ones for all valid tokens
+      input_mask = tf.transpose(input_mask,(1,0))
+
+      bi_mask = input_mask*(1.0-target_mask_e)
+      attn_mask = tf.einsum('bi,bj->bij',bi_mask,bi_mask)
+      attn_mask = 1.0 - attn_mask
+
+    else:
+      attn_mask = tf.ones([batch_size, qlen, qlen],dtype=tf_float)
+
+    mask_u = tf.matrix_band_part(attn_mask, 0, -1)
+    mask_dia = tf.matrix_band_part(attn_mask, 0, 0)
+    attn_mask_pad = tf.zeros([batch_size, qlen, mlen],dtype=tf_float)
+    ret = tf.concat([attn_mask_pad, mask_u - mask_dia], -1)
+
+    if same_length:
+      mask_l = tf.matrix_band_part(attn_mask, -1, 0)
+      ret = tf.concat([ret[:, :qlen] + mask_l - mask_dia, ret[:, qlen:]], -1)
+
+    if bidirectional_mask:
+      # mask attention to invalid tokens
+      ret = ret+(1.0-input_mask[:,None,:])
+      ret = tf.cast(ret>=1.0,dtype=tf_float)
+
+    # Batch size is in third index
+    ret = tf.transpose(ret,(1,2,0))
+
+    return ret
 
 def _cache_mem(curr_out, prev_mem, mem_len=None):
   if mem_len is None or prev_mem is None:
@@ -452,8 +522,11 @@ def transformer(dec_inp, target, mems, n_token, n_layer, d_model, d_embed,
                 same_length=False, clamp_len=-1, use_tpu=True,
                 input_perms=None, target_perms=None, head_target=None,
                 untie_r=False, proj_same_dim=True,
-                scope='transformer',infer=False):
+                scope='transformer',infer=False,
+                bidirectional_mask=False, target_mask=None,input_mask=None,
+                tgt_len = None):
   """
+  target_mask: [seq_len,bsz] 1 for tokens to predict 0 othewise
   cutoffs: a list of python int. Cutoffs for adaptive softmax.
   tie_projs: a list of python bools. Whether to tie the projections.
   use_tpu: if True, use one_hot in embedding lookup and bin-based implementation
@@ -461,6 +534,7 @@ def transformer(dec_inp, target, mems, n_token, n_layer, d_model, d_embed,
   perms: a list of tensors. Each tensor should of size [len, bsz, bin_size].
         Only used in the adaptive setting.
   """
+
   new_mems = []
   with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):
     if untie_r:
@@ -475,6 +549,7 @@ def transformer(dec_inp, target, mems, n_token, n_layer, d_model, d_embed,
                                  initializer=initializer)
 
     qlen = tf.shape(dec_inp)[0]
+    batch_size = tf.shape(dec_inp)[1]
     mlen = tf.shape(mems[0])[0] if mems is not None else 0
     klen = mlen + qlen
 
@@ -494,7 +569,11 @@ def transformer(dec_inp, target, mems, n_token, n_layer, d_model, d_embed,
         perms=input_perms,
         proj_same_dim=proj_same_dim)
 
-    attn_mask = _create_mask(qlen, mlen, same_length)
+    attn_mask = _create_mask(qlen, mlen, batch_size, same_length, 
+                             bidirectional_mask=bidirectional_mask,
+                             target_mask=target_mask,
+                             input_mask=input_mask,
+                             tgt_len=tgt_len)
 
     pos_seq = tf.range(klen - 1, -1, -1.0)
     if clamp_len > 0:
@@ -555,7 +634,10 @@ def transformer(dec_inp, target, mems, n_token, n_layer, d_model, d_embed,
           perms=target_perms,
           head_target=head_target,
           proj_same_dim=proj_same_dim,
-          infer_final_logit=infer)
+          infer_final_logit=infer,
+          target_mask=target_mask,
+          tgt_len=tgt_len,
+          qlen=qlen)
     
     return maybe_loss_or_logit, new_mems
     

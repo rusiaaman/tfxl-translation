@@ -139,7 +139,11 @@ flags.DEFINE_float("proj_init_std", default=0.01,
       help="Initialization std for embedding projection.")
 flags.DEFINE_float("init_range", default=0.1,
       help="Initialization std when init is uniform.")
-
+#NMT
+flags.DEFINE_bool("bi_mask",default=False,
+      help="Use bidirectional mask for source tokens")
+flags.DEFINE_int("tgt_len",default=None,
+      help="Lenght of tgt tokens. default: seq_len//2")
 
 FLAGS = flags.FLAGS
 
@@ -168,6 +172,12 @@ def get_model_fn():
     mems = params["cache"]
     inp = tf.transpose(features["input"], [1, 0])
     tgt = tf.transpose(features["labels"], [1, 0])
+    target_mask = features.get("target_mask")
+    if target_mask is not None:
+      target_mask = tf.transpose(target_mask,[1,0])
+    input_mask = features.get("input_mask")
+    if input_mask is not None:
+      input_mask = tf.transpose(input_mask,[1,0])
 
     bin_sizes = train_bin_sizes if is_training else eval_bin_sizes
     if bin_sizes:
@@ -232,7 +242,11 @@ def get_model_fn():
         clamp_len=FLAGS.clamp_len,
         use_tpu=FLAGS.use_tpu,
         untie_r=FLAGS.untie_r,
-        proj_same_dim=True)
+        proj_same_dim=True,
+        bidirectional_mask=FLAGS.bi_mask,
+        target_mask=target_mask,
+        input_mask=input_mask,
+        tgt_len=FLAGS.tgt_len)
 
     total_loss = tf.reduce_mean(loss)
 

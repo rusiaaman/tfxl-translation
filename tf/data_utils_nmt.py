@@ -39,6 +39,9 @@ EOD_ID = special_symbols["<eod>"]
 EOP_ID = special_symbols["<eop>"]
 HIN_ID = special_symbols["<hi>"]
 ENG_ID = special_symbols["<eng>"]
+SOS_ID = special_symbols["<s>"]
+EOS_ID = special_symbols["</s>"]
+PAD_ID = special_symbols["<pad>"]
 
 def _int64_feature(values):
   return tf.train.Feature(int64_list=tf.train.Int64List(value=values))
@@ -49,9 +52,10 @@ def _float_feature(values):
 
 
 
-def format_filename_gen(prefix, bsz_per_host, seq_len, bi_data, suffix,
-                    uncased=False):
+def format_filename_gen(prefix, seq_len, bi_data, suffix,
+                    src_lang,tgt_lang,uncased=False,):
   """docs."""
+
   if not uncased:
     uncased_str = ""
   else:
@@ -62,106 +66,118 @@ def format_filename_gen(prefix, bsz_per_host, seq_len, bi_data, suffix,
     bi_data_str = "uni"
 
 
-  file_name = "{}.bsz-{}.seqlen-{}.{}{}.gen.{}".format(
-      prefix, bsz_per_host, seq_len, uncased_str, 
+  file_name = "{}-{}_{}.seqlen-{}.{}{}.gen.{}".format(
+      src_lang[:2],tgt_lang[:2],
+      prefix, seq_len, uncased_str, 
       bi_data_str, suffix)
 
   return file_name
 
-def _create_data(idx, input_paths, transliterate=True, language_tag=True, major_language='english'):
+def _create_data(idx, src_file, tgt_file, src_lang, tgt_lang,
+                  transliterate=True, language_tag=True):
   # Load sentence-piece model
   sp = spm.SentencePieceProcessor()
   sp.Load(FLAGS.sp_path)
 
-  input_shards = []
+  input_data = []
+  target_data = []
+  target_mask_data = []
+  input_mask_data = []
   total_line_cnt = 0
-  for input_path in input_paths:
-    input_data, sent_ids = [], []
-    sent_id, line_cnt = True, 0
-    tf.logging.info("Processing %s", input_path)
-    for line in tf.gfile.Open(input_path):
-      if line_cnt % 100000 == 0:
-        tf.logging.info("Loading line %d", line_cnt)
-      line_cnt += 1
+  for src_line,tgt_line in zip(tf.gfile.Open(src_file),
+                                tf.gfile.Open(tgt_file)):
+    if total_line_cnt % 100000 == 0:
+      tf.logging.info("Loading line %d", total_line_cnt)
 
-      if not line.strip():
-        if FLAGS.use_eod:
-          sent_id = not sent_id
-          cur_sent = [EOD_ID]
-        else:
-          continue
-      else:
-        if FLAGS.from_raw_text:
-          cur_sent = preprocess_text(line.strip(), lower=FLAGS.uncased)
-          cur_sent = encode_ids(sp, cur_sent,
-                               transliterate=transliterate, language_tag=language_tag,
-                               eng_id=ENG_ID, hin_id=HIN_ID, major_language=major_language)
-        else:
-          cur_sent = list(map(int, line.strip().split()))
-        if FLAGS.use_eop:
-          cur_sent.append(EOP_ID)
-
-      input_data.extend(cur_sent)
-      sent_ids.extend([sent_id] * len(cur_sent))
-      sent_id = not sent_id
-
-    tf.logging.info("Finish with line %d", line_cnt)
-    if line_cnt == 0:
+    if not src_line.strip() or not tgt_line.strip():
       continue
 
-    input_data = np.array(input_data, dtype=np.int64)
-    sent_ids = np.array(sent_ids, dtype=np.bool)
+    if FLAGS.from_raw_text:
+      src_sent = preprocess_text(src_line.strip(), lower=FLAGS.uncased)
+      tgt_sent = preprocess_text(tgt_line.strip(), lower=FLAGS.uncased)
+      src_sent = encode_ids(sp, src_sent,
+                           transliterate=transliterate, language_tag=False)
+      tgt_sent = encode_ids(sp, tgt_sent,
+                           transliterate=transliterate, language_tag=False)
+      tgt_sent = tgt_sent+[EOS_ID]
+      tgt_sent_input = tgt_sent[:-1]
+      tgt_sent_output = tgt_sent[1:]
 
-    total_line_cnt += line_cnt
-    input_shards.append((input_data, sent_ids))
+      #Maximum size allowed for target
+      tgt_sent_output = tgt_sent_output[:FLAGS.tgt_len]
+      tgt_sent_input  = tgt_sent_input[:FLAGS.tgt_len]
+
+      if FLAGS.language_tag:
+        src_id = ENG_ID if src_lang=="english" else HIN_ID
+        tgt_id = ENG_ID if tgt_lang=="english" else HIN_ID
+        src_sent_e = [src_id]+src_sent
+        tgt_sent_input = [tgt_id]+tgt_sent_input
+
+      if FLAGS.use_sos:
+        src_sent_e = [SOS_ID]+src_sent_e
+        tgt_sent_input = [SOS_ID]+tgt_sent_input
+
+      input_len = len(src_sent_e)+len(tgt_sent_input)+1 #One extra for EOS after source
+      if input_len>FLAGS.seq_len:
+        if FLAGS.long_sentences=='ignore':
+          continue
+        else:
+          # Truncate in ratio of their original lenghts
+          to_trunc = input_len - FLAGS.seq_len
+          len_ratio = len(src_sent_e)/len(tgt_sent_input)
+          to_trunc_src = min(int(len_ratio*to_trunc),to_trunc)
+          to_trunc_tgt = to_trunc-to_trunc_src
+          if to_trunc_src>0:
+            src_sent_e = src_sent_e[:-to_trunc_src]
+          if to_trunc_tgt>0:
+            tgt_sent_input = tgt_sent_input[:-to_trunc_tgt]
+            tgt_sent_output = tgt_sent_output[:-to_trunc_tgt]
+          input_len = FLAGS.seq_len
+          assert len(src_sent_e)+len(tgt_sent_input)+1 == input_len
+
+      # Target padding to tgt_len on the left side
+      target_mask = [0]*(FLAGS.tgt_len-len(tgt_sent_output))+ [1]*len(tgt_sent_output)
+      target = [PAD_ID]*(FLAGS.tgt_len-len(tgt_sent_output))+ tgt_sent_output
+
+      # Paddings for input 
+      pads = [PAD_ID]*(FLAGS.seq_len-input_len)
+      instance = pads+src_sent_e+[EOS_ID]+tgt_sent_input
+      input_mask = [0]*len(pads)+[1]*(len(instance)-len(pads))
+
+
+      assert len(instance) == FLAGS.seq_len, len(instance)
+      assert len(input_mask) == FLAGS.seq_len, len(input_mask)
+      assert len(target) == FLAGS.tgt_len, len(target)
+      assert len(target_mask) == FLAGS.tgt_len, len(target_mask)
+    else:
+      raise Exception("Loading from id files not yet supported")
+
+    input_data.append(np.array(instance,dtype=np.int64))
+    target_data.append(np.array(target,dtype=np.int64))
+    target_mask_data.append(np.array(target_mask,dtype=np.int64))
+    input_mask_data.append(np.array(input_mask,dtype=np.int64))
+    total_line_cnt+=1
+
+  tf.logging.info("Finish with line %d", total_line_cnt)
+  if total_line_cnt == 0:
+    raise Exception("Files have no valid data")
 
   tf.logging.info("[Task %d] Total number line: %d", idx, total_line_cnt)
 
   tfrecord_dir = os.path.join(FLAGS.save_dir, "tfrecords")
 
-  filenames, num_batch = [], 0
-
-  # Randomly shuffle input shards (with a fixed but distinct random seed)
-  np.random.seed(100 * FLAGS.task + FLAGS.pass_id)
-
-  perm_indices = np.random.permutation(len(input_shards))
-  tf.logging.info("Using perm indices %s for pass %d",
-                  perm_indices.tolist(), FLAGS.pass_id)
-  
-
-  input_data_list, sent_ids_list = [], []
-  prev_sent_id = None
-  for perm_idx in perm_indices:
-    input_data, sent_ids = input_shards[perm_idx]
-    # make sure the `send_ids[0] == not prev_sent_id`
-    if prev_sent_id is not None and sent_ids[0] == prev_sent_id:
-      sent_ids = np.logical_not(sent_ids)
-
-    # append to temporary list
-    input_data_list.append(input_data)
-    sent_ids_list.append(sent_ids)
-
-    # update `prev_sent_id`
-    prev_sent_id = sent_ids[-1]
-
-  input_data = np.concatenate(input_data_list)
-  sent_ids = np.concatenate(sent_ids_list)
-
-  file_name, cur_num_batch = create_tfrecords(
+  file_name, num_batch = create_tfrecords(
       save_dir=tfrecord_dir,
       basename="{}-{}-{}".format(FLAGS.split, idx, FLAGS.pass_id),
-      data=[input_data, sent_ids],
-      bsz_per_host=FLAGS.bsz_per_host,
+      data=(input_data,target_data,target_mask_data,input_mask_data),
       seq_len=FLAGS.seq_len,
       bi_data=FLAGS.bi_data,
-      sp=sp,
+      sp=sp
   )
 
-  filenames.append(file_name)
-  num_batch += cur_num_batch
-
   record_info = {
-      "filenames": filenames,
+      "filenames": [file_name],
+      "langs": [src_lang,tgt_lang],
       "num_batch": num_batch
   }
 
@@ -182,6 +198,9 @@ def create_data(_):
   if not tf.gfile.Exists(tfrecord_dir):
     tf.gfile.MakeDirs(tfrecord_dir)
 
+  if FLAGS.tgt_len is None:
+    FLAGS.tgt_len = FLAGS.seq_len//2 
+
   # Create and dump corpus_info from task 0
   if FLAGS.task == 0:
     corpus_info = {
@@ -191,99 +210,59 @@ def create_data(_):
         "seq_len": FLAGS.seq_len,
         "uncased": FLAGS.uncased,
         "bi_data": FLAGS.bi_data,
-        "use_eod": FLAGS.use_eod,
-        "use_eop": FLAGS.use_eop,
+        "use_sos": FLAGS.use_sos,
         "sp_path": FLAGS.sp_path,
-        "input_glob": FLAGS.input_glob,
+        "src_file": FLAGS.src_file,
+        "tft_file": FLAGS.tgt_file,
+        "src_lang": FLAGS.src_lang,
+        "tgt_lang": FLAGS.tgt_lang,
     }
     corpus_info_path = os.path.join(FLAGS.save_dir, "corpus_info.json")
     with tf.gfile.Open(corpus_info_path, "w") as fp:
       json.dump(corpus_info, fp)
 
   # Interleavely split the work into FLAGS.num_task splits
-  file_paths = sorted(tf.gfile.Glob(FLAGS.input_glob))
-  tf.logging.info("Use glob: %s", FLAGS.input_glob)
-  tf.logging.info("Find %d files: %s", len(file_paths), file_paths)
+  assert tf.gfile.Exists(FLAGS.src_file), f"{FLAGS.src_file} not found"
+  assert tf.gfile.Exists(FLAGS.tgt_file), f"{FLAGS.tgt_file} not found"
 
-  task_file_paths = file_paths[FLAGS.task::FLAGS.num_task]
-  if not task_file_paths:
-    tf.logging.info("Exit: task %d has no file to process.", FLAGS.task)
-    return
-
-  tf.logging.info("Task %d process %d files: %s",
-                  FLAGS.task, len(task_file_paths), task_file_paths)
-
-  if FLAGS.bi_data:
-    tf.logging.info("Using bi data")
-
-  record_info = _create_data(FLAGS.task, task_file_paths, 
+  record_info = _create_data(FLAGS.task, FLAGS.src_file, FLAGS.tgt_file,
+                             FLAGS.src_lang,
+                             FLAGS.tgt_lang, 
                              transliterate=FLAGS.transliterate, 
-                             language_tag=FLAGS.language_tag,
-                             major_language=FLAGS.major_language)
+                             language_tag=FLAGS.language_tag)
 
   record_prefix = "record_info-{}-{}-{}".format(
       FLAGS.split, FLAGS.task, FLAGS.pass_id)
   record_name = format_filename_gen(
       prefix=record_prefix,
-      bsz_per_host=FLAGS.bsz_per_host,
       seq_len=FLAGS.seq_len,
       bi_data=FLAGS.bi_data,
       suffix="json",
-      uncased=FLAGS.uncased)
+      uncased=FLAGS.uncased,
+      src_lang=FLAGS.src_lang,
+      tgt_lang=FLAGS.tgt_lang)
   record_info_path = os.path.join(tfrecord_dir, record_name)
 
   with tf.gfile.Open(record_info_path, "w") as fp:
     json.dump(record_info, fp)
 
 
-def batchify(data, bsz_per_host, sent_ids=None):
-  num_step = len(data) // bsz_per_host
-  data = data[:bsz_per_host * num_step]
-  data = data.reshape(bsz_per_host, num_step)
-  if sent_ids is not None:
-    sent_ids = sent_ids[:bsz_per_host * num_step]
-    sent_ids = sent_ids.reshape(bsz_per_host, num_step)
 
-  if sent_ids is not None:
-    return data, sent_ids
-  return data
-
-
-
-
-def create_tfrecords(save_dir, basename, data, bsz_per_host, seq_len,
+def create_tfrecords(save_dir, basename, data, seq_len,
                      bi_data, sp):
-  data, sent_ids = data[0], data[1]
-
-  num_core = FLAGS.num_core_per_host
-  bsz_per_core = bsz_per_host // num_core
+  input_data,target_data,target_mask_data,input_mask_data = data
 
   if bi_data:
-    assert bsz_per_host % (2 * FLAGS.num_core_per_host) == 0
-    fwd_data, fwd_sent_ids = batchify(data, bsz_per_host // 2, sent_ids)
-
-    fwd_data = fwd_data.reshape(num_core, 1, bsz_per_core // 2, -1)
-    fwd_sent_ids = fwd_sent_ids.reshape(num_core, 1, bsz_per_core // 2, -1)
-
-    bwd_data = fwd_data[:, :, :, ::-1]
-    bwd_sent_ids = fwd_sent_ids[:, :, :, ::-1]
-
-    data = np.concatenate(
-        [fwd_data, bwd_data], 1).reshape(bsz_per_host, -1)
-    sent_ids = np.concatenate(
-        [fwd_sent_ids, bwd_sent_ids], 1).reshape(bsz_per_host, -1)
-  else:
-    data, sent_ids = batchify(data, bsz_per_host, sent_ids)
-
-  tf.logging.info("Raw data shape %s.", data.shape)
-
+    raise Exception("Bi directional data not supported right now")
+  
   file_name = format_filename_gen(
       prefix=basename,
-      bsz_per_host=bsz_per_host,
       seq_len=seq_len,
       bi_data=bi_data,
       suffix="tfrecords",
-      uncased=FLAGS.uncased)
+      uncased=FLAGS.uncased,
+      src_lang=FLAGS.src_lang,
+      tgt_lang=FLAGS.tgt_lang)
 
   save_path = os.path.join(save_dir, file_name)
   record_writer = tf.python_io.TFRecordWriter(save_path)
@@ -291,37 +270,17 @@ def create_tfrecords(save_dir, basename, data, bsz_per_host, seq_len,
 
   num_batch = 0
 
-  data_len = data.shape[1]
-  i = 0
-  while i + seq_len+1 <= data_len:
-    if num_batch % 500 == 0:
-      tf.logging.info("Processing batch %d", num_batch)
+  for inputs,targets,inp_masks,tgt_masks in zip(input_data,target_data,input_mask_data,target_mask_data):
+    feature = {
+        "input": _int64_feature(inputs),
+        "labels": _int64_feature(targets),
+        "input_mask": _int64_feature(inp_masks),
+        "target_mask": _int64_feature(tgt_masks),
+    }
 
-    all_ok = True
-    features = []
-    for idx in range(bsz_per_host):
-      cat_data = data[idx,i: i+seq_len]
-      tgt = data[idx,i+1: i+seq_len+1]
-      is_masked = np.ones(seq_len,dtype=np.int64)
-      label = 0
-      seg_id = [0]*seq_len
-
-      feature = {
-          "input": _int64_feature(cat_data),
-          "labels": _int64_feature(tgt),
-      }
-      features.append(feature)
-
-    if all_ok:
-      assert len(features) == bsz_per_host
-      for feature in features:
-        example = tf.train.Example(features=tf.train.Features(feature=feature))
-        record_writer.write(example.SerializeToString())
-      num_batch += 1
-    else:
-      break
-
-    i += seq_len
+    example = tf.train.Example(features=tf.train.Features(feature=feature))
+    record_writer.write(example.SerializeToString())
+    num_batch += 1
 
   record_writer.close()
   tf.logging.info("Done writing %s. Num of batches: %d", save_path, num_batch)
@@ -362,12 +321,6 @@ def parse_files_to_dataset(parser, file_names, split, num_batch, num_hosts,
   #assert split == "train"
   dataset = tf.data.Dataset.from_tensor_slices(file_paths)
 
-  # file-level shuffle
-  if len(file_paths) > 1 and not toeval:
-    dataset = dataset.shuffle(len(file_paths))
-
-  # Note: we cannot perform sample-level shuffle here because this will violate
-  # the consecutive requirement of data stream.
   dataset = tf.data.TFRecordDataset(dataset)
 
   # (zihang): since we are doing online preprocessing, the parsed result of
@@ -376,8 +329,7 @@ def parse_files_to_dataset(parser, file_names, split, num_batch, num_hosts,
   # So, change to cache non-parsed raw data instead.
   
   if not toeval:
-    dataset = dataset.cache().map(parser)
-    dataset = dataset.repeat()
+    dataset = dataset.cache().shuffle(10000).repeat().map(parser)
   else:
     dataset = dataset.map(parser)
 
@@ -387,7 +339,7 @@ def parse_files_to_dataset(parser, file_names, split, num_batch, num_hosts,
   return dataset
 
 def get_dataset(params, num_hosts, num_core_per_host, split, file_names,
-                num_batch, seq_len, use_bfloat16=False, toeval=True):
+                num_batch, seq_len, use_bfloat16=False, toeval=True, tgt_len=None):
 
   bsz_per_core = params["batch_size"]
   if num_hosts > 1:
@@ -395,12 +347,16 @@ def get_dataset(params, num_hosts, num_core_per_host, split, file_names,
   else:
     host_id = 0
 
+  if tgt_len is None:
+    tgt_len = seq_len//2
   #### Function used to parse tfrecord
   def parser(record):
     """function used to parse tfrecord."""
     record_spec = {
         "input": tf.FixedLenFeature([seq_len], tf.int64),
-        "labels": tf.FixedLenFeature([seq_len], tf.int64),
+        "labels": tf.FixedLenFeature([tgt_len], tf.int64),
+        "input_mask": tf.FixedLenFeature([seq_len],tf.int64),
+        "target_mask": tf.FixedLenFeature([tgt_len],tf.int64)
     }
 
     # retrieve serialized example
@@ -433,6 +389,8 @@ def get_dataset(params, num_hosts, num_core_per_host, split, file_names,
 def get_input_fn(
     tfrecord_dir,
     split,
+    src_lang,
+    tgt_lang,
     bsz_per_host,
     seq_len,
     bi_data,
@@ -441,16 +399,18 @@ def get_input_fn(
     uncased=False,
     num_passes=None,
     use_bfloat16=False,
-    toeval=False):
+    toeval=False,
+    tgt_len=None):
 
   # Merge all record infos into a single one
   record_glob_base = format_filename_gen(
       prefix="record_info-{}-*".format(split),
-      bsz_per_host=bsz_per_host,
       seq_len=seq_len,
       bi_data=bi_data,
       suffix="json",
-      uncased=uncased)
+      uncased=uncased,
+      src_lang=src_lang,
+      tgt_lang=tgt_lang)
 
   record_info = {"num_batch": 0, "filenames": []}
 
@@ -525,7 +485,8 @@ def get_input_fn(
         num_batch=record_info["num_batch"],
         seq_len=seq_len,
         use_bfloat16=use_bfloat16,
-        toeval=toeval)
+        toeval=toeval,
+        tgt_len=tgt_len)
 
     return dataset
 
@@ -537,20 +498,17 @@ if __name__ == "__main__":
   flags.DEFINE_bool("use_tpu", True, help="whether to use TPUs")
   flags.DEFINE_integer("bsz_per_host", 32, help="batch size per host.")
   flags.DEFINE_integer("num_core_per_host", 8, help="num TPU cores per host.")
-
   flags.DEFINE_integer("seq_len", 512,
                        help="Sequence length.")
+  flags.DEFINE_integer("tgt_len", None,
+                       help="Targets will be padded to this size. Default is seq_len//2")
   flags.DEFINE_bool("uncased", False, help="Use uncased inputs or not.")
   flags.DEFINE_bool("bi_data", True,
                     help="whether to create bidirectional data")
-  flags.DEFINE_bool("use_eod", True,
-                    help="whether to append EOD at the end of a doc.")
-  flags.DEFINE_bool("use_eop", True,
-                    help="whether to append EOP afte each para.")
+  flags.DEFINE_bool("use_sos", True,
+                    help="whether to use SOS.")
   flags.DEFINE_bool("from_raw_text", True,
                     help="Whether the input is raw text or encoded ids.")
-  flags.DEFINE_string("input_glob", "data/example/*.txt",
-                      help="Input file glob.")
   flags.DEFINE_string("sp_path", "", help="Path to the sentence piece model.")
   flags.DEFINE_string("save_dir", "proc_data/example",
                       help="Directory for saving the processed data.")
@@ -561,10 +519,19 @@ if __name__ == "__main__":
   flags.DEFINE_integer("num_task", 1, help="Number of total tasks.")
   flags.DEFINE_integer("task", 0, help="The Task ID. This value is used when "
                        "using multiple workers to identify each worker.")
+  flags.DEFINE_bool("transliterate", True,
                     help="Transliterate to hindi.")
   flags.DEFINE_bool("language_tag", True,
                     help="Use language special symbol.")
-  flags.DEFINE_string("major_language", 'english',
-                    help="Major document lang english/hindi.")
+  flags.DEFINE_string("src_file", 'IITB.en-hi.hi',
+                    help="Source language file.")
+  flags.DEFINE_string("tgt_file", 'IITB.en-hi.en',
+                    help="Target language file.")
+  flags.DEFINE_string("src_lang", 'hindi',
+                    help="Source language file.")
+  flags.DEFINE_string("tgt_lang", 'english',
+                    help="Target language file.")
+  flags.DEFINE_enum("long_sentences", 'truncate', ['truncate','ignore'],
+                    help="Whether .")
   tf.logging.set_verbosity(tf.logging.INFO)
   tf.app.run(create_data)
