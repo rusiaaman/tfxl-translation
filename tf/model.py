@@ -574,7 +574,6 @@ def transformer(dec_inp, target, mems, n_token, n_layer, d_model, d_embed,
                              target_mask=target_mask,
                              input_mask=input_mask,
                              tgt_len=tgt_len)
-
     pos_seq = tf.range(klen - 1, -1, -1.0)
     if clamp_len > 0:
       pos_seq = tf.minimum(pos_seq, clamp_len)

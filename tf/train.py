@@ -97,7 +97,7 @@ flags.DEFINE_string("eval_split", "valid",
       help="Which data split to evaluate.")
 
 # Model paramenters
-flags.DEFINE_integer("tgt_len", default=70,
+flags.DEFINE_integer("seq_len", default=70,
       help="Number of steps to predict")
 flags.DEFINE_integer("mem_len", default=70,
       help="Number of steps to cache")
@@ -312,7 +312,7 @@ def get_model_fn():
     train_spec = tf.contrib.tpu.TPUEstimatorSpec(
         mode=mode, loss=total_loss, train_op=train_op)
 
-    if FLAGS.mem_len < FLAGS.tgt_len:
+    if FLAGS.mem_len < FLAGS.seq_len:
       new_mems = [new_mems[: FLAGS.mem_len] for mem_t in new_mems]
     train_spec.cache = new_mems
 
@@ -351,7 +351,7 @@ def main(unused_argv):
         tfrecord_dir=FLAGS.record_info_dir,
         split="train",
         bsz_per_host=FLAGS.train_batch_size // FLAGS.num_hosts,
-        seq_len=FLAGS.tgt_len,
+        seq_len=FLAGS.seq_len,
         bi_data=FLAGS.bi_data,
         num_passes=FLAGS.num_passes,
         num_core_per_host=FLAGS.num_core_per_host,
@@ -372,7 +372,7 @@ def main(unused_argv):
         tfrecord_dir=FLAGS.record_info_dir,
         split=FLAGS.eval_split,
         bsz_per_host=FLAGS.eval_batch_size // FLAGS.num_hosts,
-        seq_len=FLAGS.tgt_len,
+        seq_len=FLAGS.seq_len,
         num_passes=FLAGS.num_passes,
         bi_data=False,
         num_core_per_host=FLAGS.num_core_per_host,
