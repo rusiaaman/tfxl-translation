@@ -154,8 +154,8 @@ def _create_data(idx, src_file, tgt_file, src_lang, tgt_lang,
 
     input_data.append(np.array(instance,dtype=np.int64))
     target_data.append(np.array(target,dtype=np.int64))
-    target_mask_data.append(np.array(target_mask,dtype=np.int64))
-    input_mask_data.append(np.array(input_mask,dtype=np.int64))
+    target_mask_data.append(np.array(target_mask,dtype=np.float32))
+    input_mask_data.append(np.array(input_mask,dtype=np.float32))
     total_line_cnt+=1
 
   tf.logging.info("Finish with line %d", total_line_cnt)
