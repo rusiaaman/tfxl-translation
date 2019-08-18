@@ -142,7 +142,7 @@ flags.DEFINE_float("init_range", default=0.1,
 #NMT
 flags.DEFINE_bool("bi_mask",default=False,
       help="Use bidirectional mask for source tokens")
-flags.DEFINE_int("tgt_len",default=None,
+flags.DEFINE_integer("tgt_len",default=None,
       help="Lenght of tgt tokens. default: seq_len//2")
 
 FLAGS = flags.FLAGS
