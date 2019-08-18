@@ -274,8 +274,8 @@ def create_tfrecords(save_dir, basename, data, seq_len,
     feature = {
         "input": _int64_feature(inputs),
         "labels": _int64_feature(targets),
-        "input_mask": _int64_feature(inp_masks),
-        "target_mask": _int64_feature(tgt_masks),
+        "input_mask": _float_feature(inp_masks),
+        "target_mask": _float_feature(tgt_masks),
     }
 
     example = tf.train.Example(features=tf.train.Features(feature=feature))
