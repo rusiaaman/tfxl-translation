@@ -355,8 +355,8 @@ def get_dataset(params, num_hosts, num_core_per_host, split, file_names,
     record_spec = {
         "input": tf.FixedLenFeature([seq_len], tf.int64),
         "labels": tf.FixedLenFeature([tgt_len], tf.int64),
-        "input_mask": tf.FixedLenFeature([seq_len],tf.int64),
-        "target_mask": tf.FixedLenFeature([tgt_len],tf.int64)
+        "input_mask": tf.FixedLenFeature([seq_len],tf.float32),
+        "target_mask": tf.FixedLenFeature([tgt_len],tf.float32)
     }
 
     # retrieve serialized example
