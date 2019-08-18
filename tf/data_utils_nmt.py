@@ -232,7 +232,7 @@ def create_data(_):
   record_name = format_filename_gen(
       prefix=record_prefix,
       seq_len=FLAGS.seq_len,
-      seq_len=FLAGS.tgt_len,
+      tgt_len=FLAGS.tgt_len,
       bi_data=FLAGS.bi_data,
       suffix="json",
       uncased=FLAGS.uncased,
