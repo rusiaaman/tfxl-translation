@@ -4,6 +4,8 @@ from __future__ import print_function
 
 import math
 import time
+import collections
+import re
 
 from absl import flags
 import absl.logging as _logging  # pylint: disable=unused-import
@@ -164,6 +166,34 @@ def metric_fn(loss):
       "bpc": tf.metrics.mean(bpc),
   }
 
+
+def get_assignment_map_from_checkpoint(tvars, init_checkpoint):
+  """Compute the union of the current variables and checkpoint variables."""
+  assignment_map = {}
+  initialized_variable_names = {}
+
+  name_to_variable = collections.OrderedDict()
+  for var in tvars:
+    name = var.name
+    m = re.match("^(.*):\\d+$", name)
+    if m is not None:
+      name = m.group(1)
+    name_to_variable[name] = var
+
+  init_vars = tf.train.list_variables(init_checkpoint)
+
+  assignment_map = collections.OrderedDict()
+  for x in init_vars:
+    (name, var) = (x[0], x[1])
+    # tf.logging.info('original name: %s', name)
+    if name not in name_to_variable:
+      continue
+    # assignment_map[name] = name
+    assignment_map[name] = name_to_variable[name]
+    initialized_variable_names[name] = 1
+    initialized_variable_names[name + ":0"] = 1
+
+  return (assignment_map, initialized_variable_names)
 
 def init_from_checkpoint_scaffold(global_vars=False):
   tvars = tf.global_variables() if global_vars else tf.trainable_variables()
