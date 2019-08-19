@@ -101,7 +101,7 @@ def _create_data(idx, src_file, tgt_file, src_lang, tgt_lang,
                            transliterate=transliterate, language_tag=False)
       tgt_sent = tgt_sent+[EOS_ID]
       tgt_sent_input = tgt_sent[:-1]
-      tgt_sent_output = tgt_sent[1:]
+      tgt_sent_output = tgt_sent
 
       #Maximum size allowed for target
       tgt_sent_output = tgt_sent_output[:FLAGS.tgt_len]
