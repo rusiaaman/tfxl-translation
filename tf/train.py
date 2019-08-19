@@ -149,6 +149,9 @@ flags.DEFINE_bool("bi_mask",default=False,
       help="Use bidirectional mask for source tokens")
 flags.DEFINE_integer("tgt_len",default=None,
       help="Lenght of tgt tokens. default: seq_len//2")
+# Checkpoint
+flags.DEFINE_string("init_checkpoint", default=None,
+                    help="checkpoint path for initializing the model for training.")
 
 FLAGS = flags.FLAGS
 
@@ -160,6 +163,42 @@ def metric_fn(loss):
       "perplexity": tf.metrics.mean(perplexity),
       "bpc": tf.metrics.mean(bpc),
   }
+
+
+def init_from_checkpoint_scaffold(global_vars=False):
+  tvars = tf.global_variables() if global_vars else tf.trainable_variables()
+  initialized_variable_names = {}
+  scaffold_fn = None
+  if FLAGS.init_checkpoint is not None:
+    if FLAGS.init_checkpoint.endswith("latest"):
+      ckpt_dir = os.path.dirname(FLAGS.init_checkpoint)
+      init_checkpoint = tf.train.latest_checkpoint(ckpt_dir)
+    else:
+      init_checkpoint = FLAGS.init_checkpoint
+
+    tf.logging.info("Initialize from the ckpt {}".format(init_checkpoint))
+
+    (assignment_map, initialized_variable_names
+    ) = get_assignment_map_from_checkpoint(tvars, init_checkpoint)
+    if FLAGS.use_tpu:
+      def tpu_scaffold():
+        tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
+        return tf.train.Scaffold()
+
+      scaffold_fn = tpu_scaffold
+    else:
+      tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
+
+    # Log customized initialization
+    tf.logging.info("**** Global Variables ****")
+    for var in tvars:
+      init_string = ""
+      if var.name in initialized_variable_names:
+        init_string = ", *INIT_FROM_CKPT*"
+      tf.logging.info("  name = %s, shape = %s%s", var.name, var.shape,
+                      init_string)
+  return scaffold_fn
+
 
 
 def get_model_fn():
@@ -255,16 +294,20 @@ def get_model_fn():
 
     total_loss = tf.reduce_mean(loss)
 
+    scaffold_fn = init_from_checkpoint_scaffold()
+
     if mode == tf.estimator.ModeKeys.EVAL:
       if FLAGS.use_tpu:
         with tf.colocate_with(total_loss):
           total_loss = tf.contrib.tpu.cross_replica_sum(total_loss) \
                      / FLAGS.num_hosts / FLAGS.num_core_per_host
       metric_loss = tf.tile(tf.reshape(total_loss, [1, 1]), [batch_size, 1])
+
       eval_spec = tf.contrib.tpu.TPUEstimatorSpec(
           mode=mode,
           loss=total_loss,
-          eval_metrics=(metric_fn, [metric_loss]))
+          eval_metrics=(metric_fn, [metric_loss]),
+          scaffold_fn=scaffold_fn)
 
       eval_spec.cache = new_mems
 
