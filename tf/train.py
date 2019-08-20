@@ -388,7 +388,7 @@ def get_model_fn():
 
     # Constucting TPUEstimatorSpec with cache.
     train_spec = tf.contrib.tpu.TPUEstimatorSpec(
-        mode=mode, loss=total_loss, train_op=train_op)
+        mode=mode, loss=total_loss, train_op=train_op, scaffold_fn=scaffold_fn)
 
     if FLAGS.mem_len < FLAGS.seq_len:
       new_mems = [new_mems[: FLAGS.mem_len] for mem_t in new_mems]
