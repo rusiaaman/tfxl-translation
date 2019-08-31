@@ -440,7 +440,7 @@ def main():
     if FLAGS.major_language=="hindi":
       pad_txt = """dakshhiNa eshiyaa eka anaupachaarika shabdaawalii hai jisakaa prayoga eshiyaa mahaadwiipa ke dakshhiNii hisse ke liye kiyaa jaataa hai. saamaanyata.h isa shabda se aashaya himaalaya ke dakshhiNawartii desho.m se hotaa hai jiname.m kuCha anya agala-bagala ke desha bhii joDa़ liye jaate hai.m. bhaarata, paakistaana, shrii la.mkaa aura baa.mglaadesha ko dakshhiNa eshiyaa ke desha yaa bhaaratiiya upamahaadwiipa ke desha kahaa jaataa hai jisame.m nepaala aura bhuuTaana ko bhii shaamila kara liyaa jaataa hai. kabhii kabhii isame.m aphagaanistaana aura myaaँmaara ko bhii joDa़ lete hai.m."""
       pad_ids = tokenize_fn(pad_txt)
-      pad_ids = [HIN_ID]+pad_ids+[EOD_ID]
+      pad_ids = [HIN_ID]+pad_ids+[EOP_ID]
     else:
       pad_txt = """In 1991, the remains of Russian Tsar Nicholas II and his family
                 (except for Alexei and Maria) are discovered.
