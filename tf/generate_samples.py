@@ -108,9 +108,6 @@ parser.add_argument("--temperature", default=1,
                     help="Scaling factor for logits", type=int)
 parser.add_argument("--num_toks_pred", default=128,
                     help="Number of tokens to predict", type=int)
-parser.add_argument("--bidirectional_eachstep", help="Compute bidirectional"
-                    "attention every step. Consumes a lot of time but better results",
-                    action='store_true')
 # Hindi specifics
 parser.add_argument("--transliterate", action="store_true",
                   help="Transliterate to hindi.")
@@ -414,6 +411,8 @@ def init_from_checkpoint(FLAGS, global_vars=False):
 
 def transliterate_back(text,lang):
   # English return as it is
+  if text=="":
+    return text
   if lang==0:
     return text
   from cltk.corpus.sanskrit.itrans.unicode_transliterate import ItransTransliterator as its
