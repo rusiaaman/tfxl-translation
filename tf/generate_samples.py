@@ -438,9 +438,9 @@ def main():
 
     # Temporary fix for context problem.
     if FLAGS.major_language=="hindi":
-      pad_txt = """dakshhiNa eshiyaa eka anaupachaarika shabdaawalii hai jisakaa prayoga eshiyaa mahaadwiipa ke dakshhiNii hisse ke liye kiyaa jaataa hai. saamaanyata.h isa shabda se aashaya himaalaya ke dakshhiNawartii desho.m se hotaa hai jiname.m kuCha anya agala-bagala ke desha bhii joDa़ liye jaate hai.m. bhaarata, paakistaana, shrii la.mkaa aura baa.mglaadesha ko dakshhiNa eshiyaa ke desha yaa bhaaratiiya upamahaadwiipa ke desha kahaa jaataa hai jisame.m nepaala aura bhuuTaana ko bhii shaamila kara liyaa jaataa hai. kabhii kabhii isame.m aphagaanistaana aura myaaँmaara ko bhii joDa़ lete hai.m."""
+      pad_txt = "कालिंजर दुर्ग, भारतीय राज्य उत्तर प्रदेश के बांदा जिला स्थित एक दुर्ग है। बुन्देलखण्ड क्षेत्र में विंध्य पर्वत पर स्थित यह दुर्ग विश्व धरोहर स्थल खजुराहो से ९७.७ किमी दूर है। इसे भारत के सबसे विशाल और अपराजेय दुर्गों में गिना जाता रहा है। इस दुर्ग में कई प्राचीन मन्दिर हैं। इनमें कई मंदिर तीसरी से पाँचवीं सदी गुप्तकाल के हैं। यहाँ के शिव मन्दिर के बारे में मान्यता है कि सागर-मन्थन से निकले कालकूट विष को पीने के बाद भगवान शिव ने यही तपस्या कर उसकी ज्वाला शांत की थी। कार्तिक पूर्णिमा के अवसर पर लगने वाला कतिकी मेला यहाँ का प्रसिद्ध सांस्कृतिक उत्सव है। भारत की स्वतंत्रता के पश्चात इसकी पहचान एक महत्वपूर्ण ऐतिहासिक धरोहर के रूप में की गयी है। वर्तमान में यह दुर्ग भारतीय पुरातत्त्व सर्वेक्षण विभाग के अधिकार एवं अनुरक्षण में है।"
       pad_ids = tokenize_fn(pad_txt)
-      pad_ids = [HIN_ID]+pad_ids+[EOP_ID]
+      pad_ids = pad_ids+[EOP_ID]
     else:
       pad_txt = """In 1991, the remains of Russian Tsar Nicholas II and his family
                 (except for Alexei and Maria) are discovered.
@@ -453,7 +453,7 @@ def main():
                 the Virgin Mary, prompting him to become a priest. Rasputin quickly becomes famous,
                  with people, even a bishop, begging for his blessing. """
       pad_ids = tokenize_fn(pad_txt)
-      pad_ids = [ENG_ID]+pad_ids+[EOD_ID]
+      pad_ids = pad_ids+[EOD_ID]
 
 
     to_special_symbol = {v:k for k,v in special_symbols.items()}
@@ -471,7 +471,6 @@ def main():
         all_langs = [ind[1] for ind in indices[:-1]] 
         
         all_sents = list(map(sp.decode_ids,all_sents))
-        
         if FLAGS.transliterate:
           all_sents = [transliterate_back(_sent,_lang) for _sent,_lang in zip(all_sents,all_langs)]
         
