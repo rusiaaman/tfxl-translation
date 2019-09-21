@@ -142,16 +142,7 @@ def get_input_dataset(preprocessor):
 
     def mask(ids):
         example = {'input': ids}
-        input_k = example['input'][-max_mem_length:]
-        seq_len = tf.shape(input_k)[0]
-        input_mask = tf.tile(
-            tf.convert_to_tensor(
-                [0],
-                dtype=tf.float32),
-            [seq_len])
-        pad_len = tf.maximum(0, max_mem_length - seq_len)
-        pad_tensor = tf.concat([[[pad_len]], [[0]]], axis=-1)
-        input_mask = tf.pad(input_mask, pad_tensor, constant_values=1)
+        example['input'] = example['input'][-max_mem_length:]
         return example
 
     dataset = tf.data.Dataset.from_generator(preprocessor,

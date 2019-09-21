@@ -92,8 +92,8 @@ parser.add_argument("--max_decode_length", default=1024,
                     help="Maximum Number of tokens to predict", type=int)
 
 # NMT specifics
-parser.add_argument("--bi_mask",action="store_true"
-      help="Use bidirectional mask for source tokens")
+parser.add_argument("--bi_mask",action="store_true",
+                     help="Use bidirectional mask for source tokens")
 parser.add_argument("--use_sos", default=True, type=bool,
                     help="whether to use SOS.")
 parser.add_argument("--transliterate", action="store_true",
