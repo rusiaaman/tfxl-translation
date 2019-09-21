@@ -57,7 +57,7 @@ parser.add_argument("--untie_r", action='store_true',
 parser.add_argument("--clamp_len", default=-1,
                     help="Clamp length", type=int)
 parser.add_argument("--same_length", default=False,
-                    help="Same length attention", action='store_true')
+                    help="Same length attention")
 parser.add_argument("--tie_weight", type=bool, default=True,
       help="Tie embedding and softmax weight.")
 # Data and memory
@@ -162,6 +162,8 @@ def get_logits(input_ids,mems,input_mask,target_mask):
 
     features = {"input": input_ids}
     inp = tf.transpose(features["input"], [1, 0])
+    input_mask = tf.transpose(input_mask, [1, 0])
+    target_mask = tf.transpose(target_mask, [1, 0])
     tgt = None
 
     inp_perms, tgt_perms, head_tgt = None, None, None
@@ -240,7 +242,7 @@ def prediction_graph():
     input_tensor = features['input']
 
     # Calculating hidden states of inputs and getting latest logit
-    input_mask = tf.ones_like(input_tensor)
+    input_mask = tf.ones_like(input_tensor,dtype=tf.float32)
     target_mask = tf.ones((tf.shape(input_tensor)[0],1))
     _,mems = get_logits(input_tensor,mems=None,input_mask=input_mask,
                              target_mask=target_mask)
@@ -253,9 +255,9 @@ def prediction_graph():
         # We need only last token
         toks = toks[:,-1:]
         # input_mask set all the inputs to be valid
-        input_mask = tf.ones_like(toks)
+        input_mask = tf.ones_like(toks,dtype=tf.float32)
         # target_mask set to be of ones
-        target_mask = tf.ones((tf.shape(toks)[0],1))
+        target_mask = tf.ones((tf.shape(toks)[0],1),dtype=tf.float32)
         mems = [tf.transpose(mems[i],[1,0,2]) for i in range(len(mems))]
         logits,mems = get_logits(toks,mems=mems,input_mask=input_mask,
                                          target_mask=target_mask)

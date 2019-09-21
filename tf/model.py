@@ -465,7 +465,6 @@ def _create_mask(qlen, mlen, batch_size, same_length=False, target_mask=None,
     each other.
     target_mask: None or [tgt_len,bsz], where tgt_len is target length. tgt_len<qlen. 1s for target tokens
     """
-
     if bidirectional_mask:
       assert target_mask is not None, "Target mask has to be provided for bidirectional_mask"
       assert input_mask is not None, "Input mask has to be provided for bidirectional_mask"
