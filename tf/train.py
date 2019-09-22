@@ -403,7 +403,7 @@ def get_cache_fn(mem_len):
 
   def cache_fn(batch_size):
     mems = []
-    for l in xrange(FLAGS.n_layer):
+    for l in xrange(FLAGS.n_layer+1):
       if mem_len > 0:
         mems.append(
           tf.zeros([mem_len, batch_size, FLAGS.d_model], dtype=tf.float32))

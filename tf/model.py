@@ -487,6 +487,8 @@ def _create_mask(qlen, mlen, batch_size, same_length=False, target_mask=None,
     mask_u = tf.matrix_band_part(attn_mask, 0, -1)
     mask_dia = tf.matrix_band_part(attn_mask, 0, 0)
     attn_mask_pad = tf.zeros([batch_size, qlen, mlen],dtype=tf_float)
+    if mem_mask is not None:
+      attn_mask_pad+=(1.0 - mem_mask[:,None,:])
     ret = tf.concat([attn_mask_pad, mask_u - mask_dia], -1)
 
     if same_length:
@@ -513,7 +515,6 @@ def _cache_mem(curr_out, prev_mem, mem_len=None):
 
   return tf.stop_gradient(new_mem)
 
-
 def transformer(dec_inp, target, mems, n_token, n_layer, d_model, d_embed,
                 n_head, d_head, d_inner, dropout, dropatt,
                 initializer, is_training, proj_initializer=None,
@@ -523,7 +524,8 @@ def transformer(dec_inp, target, mems, n_token, n_layer, d_model, d_embed,
                 untie_r=False, proj_same_dim=True,
                 scope='transformer',infer=False,
                 bidirectional_mask=False, target_mask=None,input_mask=None,
-                tgt_len = None):
+                tgt_len = None,
+                mem_mask = None):
   """
   target_mask: [seq_len,bsz] 1 for tokens to predict 0 othewise
   cutoffs: a list of python int. Cutoffs for adaptive softmax.
@@ -568,11 +570,18 @@ def transformer(dec_inp, target, mems, n_token, n_layer, d_model, d_embed,
         perms=input_perms,
         proj_same_dim=proj_same_dim)
 
+    if mems is None:
+      mems = [None] * (n_layer+1) # One additional for caching mask
+
     attn_mask = _create_mask(qlen, mlen, batch_size, same_length, 
                              bidirectional_mask=bidirectional_mask,
                              target_mask=target_mask,
                              input_mask=input_mask,
-                             tgt_len=tgt_len)
+                             tgt_len=tgt_len,
+                             mem_mask=mems[-1])
+
+    mems[-1] = _cache_mem(input_mask, mems[-1], mem_len)
+    
     pos_seq = tf.range(klen - 1, -1, -1.0)
     if clamp_len > 0:
       pos_seq = tf.minimum(pos_seq, clamp_len)
@@ -582,8 +591,6 @@ def transformer(dec_inp, target, mems, n_token, n_layer, d_model, d_embed,
     output = tf.layers.dropout(embeddings, dropout, training=is_training)
     pos_emb = tf.layers.dropout(pos_emb, dropout, training=is_training)
 
-    if mems is None:
-      mems = [None] * n_layer
 
     for i in range(n_layer):
       # cache new mems
