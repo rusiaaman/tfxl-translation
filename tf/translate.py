@@ -81,7 +81,7 @@ parser.add_argument("--input_file", default="",
 # prediction
 parser.add_argument(
     "--interactive",
-    default=True,
+    default=False,
     help="Flag for interactive prediction through command line",
     action='store_true')
 parser.add_argument("--beam_size",default=4,type=int,
@@ -120,7 +120,7 @@ def get_preprocessor(examples, tokenize_fn):
             src_id = ENG_ID if FLAGS.src_lang=="english" else HIN_ID
             src_id = [src_id]
             if FLAGS.use_sos:
-                src_id = [SOS_ID] = src_id
+                src_id = [SOS_ID] + src_id
             ids = src_id + tokens + [EOS_ID]
             if FLAGS.use_sos:
                 ids = ids + [SOS_ID]
@@ -359,8 +359,14 @@ def main():
     def parse_ids(toks):
         """Uses sentencepiece to conver to text. Subsitute
         EOP_ID and EOD_ID with new lines, and rest with their names"""
+        
+        # IF EOS_ID was encountered rest will be pad ids
+        print(toks)
+        if EOS_ID in toks:
+            toks = toks[:toks.index(EOS_ID)]
+
         sent = sp.decode_ids(toks)
-        if FLAGS.transliterate:
+        if FLAGS.transliterate and FLAGS.tgt_lang!='english':
           sent = transliterate_back(sent,FLAGS.tgt_lang)
 
 
@@ -412,35 +418,17 @@ def main():
 
             with open(FLAGS.input_file) as f:
                 texts = []
-                text = ""
                 for line in f:
-                    if line.strip()=="":
-                        if text!="":
-                            # Removing the last <eop> of prompt
-                            # since it is not desired
-                            if text.endswith("<eop>"):
-                                text=text[:-5]
-                            texts.extend([text])
-                            text=""
-                        continue
-                    text+=re.sub(r'\n','<eop>',line)
-                if text!="":
-                    texts.extend([text])
+                    texts.append(line.strip())
 
             tf.logging.info("Got %s lines in the input file",
                             len(texts))
-
-            outputs = iter(predict(texts))
+            outputs = predict(texts)
             with open(os.path.join(FLAGS.input_file+".xlnet"),'w') as f:
                 for i in range(0,len(texts)):
-                    f.write("\n======Example {}=================\n".format(i))
-                    f.write(texts[i])
                     output,_ = next(outputs)
-                    out = parse_ids(output[0].tolist())
-                    f.write("\n======Example {} Translation ======\n".format(i))
-                    f.write(out)
-                    f.write("\n==================================\n")
-
+                    out = parse_ids(output.tolist())
+                    f.write(out+'\n')
 # Fixed flags
 FLAGS.use_tpu = False
 FLAGS.use_bfloat16 = False
