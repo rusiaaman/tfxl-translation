@@ -266,15 +266,21 @@ def prediction_graph():
         input_mask = tf.ones_like(toks,dtype=tf.float32)
         # target_mask set to be of ones
         target_mask = tf.ones((tf.shape(toks)[0],1),dtype=tf.float32)
-        mems = [tf.transpose(mems[i],[1,0,2]) for i in range(len(mems))]
+        mems = [tf.transpose(mems[i],[1,0,2]) if i<len(mems)-1 else \
+                tf.transpose(mems[i],[1,0])
+                for i in range(len(mems))]
         logits,mems = get_logits(toks,mems=mems,input_mask=input_mask,
                                          target_mask=target_mask)
-        return logits,{i:tf.transpose(mems[i],[1,0,2]) for i in range(len(mems))}
+        return logits,{i:tf.transpose(mems[i],[1,0,2]) if i<len(mems)-1 else \
+                      tf.transpose(mems[i],[1,0])
+                      for i in range(len(mems))}
     
     lang_id = ENG_ID if FLAGS.tgt_lang=="english" else HIN_ID
     initial_ids = tf.ones((batch_size),dtype=tf.int32)*lang_id
 
-    mems = {i:tf.transpose(mems[i],[1,0,2]) for i in range(len(mems))}
+    mems = {i:tf.transpose(mems[i],[1,0,2]) if i<len(mems)-1 else \
+              tf.transpose(mems[i],[1,0])
+              for i in range(len(mems))}
 
     decoded_ids, scores = beam_search.sequence_beam_search(
     symbols_to_logits_fn, initial_ids, mems, FLAGS.n_token, FLAGS.beam_size,
