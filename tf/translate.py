@@ -36,7 +36,7 @@ EOD_ID = special_symbols["<eod>"]
 EOP_ID = special_symbols["<eop>"]
 HIN_ID = special_symbols["<hi>"]
 ENG_ID = special_symbols["<eng>"]
-
+PAD_ID = special_symbols["<pad>"]
 
 parser = argparse.ArgumentParser()
 # Model
@@ -115,16 +115,29 @@ def get_preprocessor(examples, tokenize_fn):
     tf input features
     """
     def generator():
-        for example in examples:
-            tokens = tokenize_fn(example)
-            src_id = ENG_ID if FLAGS.src_lang=="english" else HIN_ID
-            src_id = [src_id]
-            if FLAGS.use_sos:
-                src_id = [SOS_ID] + src_id
-            ids = src_id + tokens + [EOS_ID]
-            if FLAGS.use_sos:
-                ids = ids + [SOS_ID]
-            yield ids
+        for i in range(0,len(examples),FLAGS.batch_size):
+            batched = examples[i:i+FLAGS.batch_size]
+            tokens_batched = list(map(tokenize_fn,batched))
+            maxlen = max(map(len,tokens_batched))
+            for tokens in tokens_batched:
+                pad_len = maxlen-len(tokens)
+
+                src_id = ENG_ID if FLAGS.src_lang=="english" else HIN_ID
+                src_id = [src_id]
+                if FLAGS.use_sos:
+                    src_id = [SOS_ID] + src_id
+                ids = src_id + tokens + [EOS_ID]
+
+                if FLAGS.use_sos:
+                    ids = ids + [SOS_ID]
+                
+                masks = [0]*pad_len+[1]*len(ids)
+                ids = [PAD_ID]*pad_len+ids
+
+                ids = ids[-FLAGS.seq_len:]
+                masks = masks[-FLAGS.seq_len:]
+
+                yield {'input':ids,'input_mask':masks}
 
     return generator
 
@@ -133,15 +146,9 @@ def get_input_dataset(preprocessor):
     """Returns tf.data.Dataset for input"""
     batch_size = FLAGS.batch_size
 
-    def mask(ids):
-        example = {'input': ids}
-        example['input'] = example['input'][-FLAGS.seq_len:]
-        return example
-
     dataset = tf.data.Dataset.from_generator(preprocessor,
-                                             output_types=tf.int32)
-    dataset = dataset.map(mask)
-
+                                             output_types={'input':tf.int32,
+                                             'input_mask':tf.float32})
     dataset = dataset.batch(batch_size,
                             drop_remainder=False)
     dataset.prefetch(1)
@@ -236,13 +243,14 @@ def prediction_graph():
 
 
     features = {
-        "input": tf.placeholder(tf.int32, (None, None))
+        "input": tf.placeholder(tf.int32, (None, None)),
+        "input_mask":  tf.placeholder(tf.float32, (None, None))
     }
     batch_size = tf.shape(features['input'])[0]
     input_tensor = features['input']
 
     # Calculating hidden states of inputs and getting latest logit
-    input_mask = tf.ones_like(input_tensor,dtype=tf.float32)
+    input_mask = features['input_mask']
     target_mask = tf.ones((tf.shape(input_tensor)[0],1))
     _,mems = get_logits(input_tensor,mems=None,input_mask=input_mask,
                              target_mask=target_mask)
