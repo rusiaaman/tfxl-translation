@@ -11,7 +11,6 @@ import re
 from tqdm import tqdm
 import absl.logging as _logging  # pylint: disable=unused-import
 import tensorflow as tf
-tf.enable_eager_execution()
 import sentencepiece as spm
 import collections
 
@@ -243,13 +242,9 @@ def prediction_graph():
     """
 
 
-    # features = {
-    #     "input": tf.placeholder(tf.int32, (None, None)),
-    #     "input_mask":  tf.placeholder(tf.float32, (None, None))
-    # }
     features = {
-    "input": tf.ones((2,4),tf.int32),
-    "input_mask": tf.constant([[0,0,1,1],[1,1,1,1]],tf.float32)
+        "input": tf.placeholder(tf.int32, (None, None)),
+        "input_mask":  tf.placeholder(tf.float32, (None, None))
     }
     batch_size = tf.shape(features['input'])[0]
     input_tensor = features['input']
