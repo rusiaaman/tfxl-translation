@@ -498,6 +498,8 @@ def _create_mask(qlen, mlen, batch_size, same_length=False, target_mask=None,
 
     if bidirectional_mask:
       # mask attention to invalid tokens
+      if mem_mask is not None:
+        input_mask = tf.concat([tf.transpose(mem_mask),input_mask],axis=-1)
       ret = ret+(1.0-input_mask[:,None,:])
       ret = tf.cast(ret>=1.0,dtype=tf_float)
 

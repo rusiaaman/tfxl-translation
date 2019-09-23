@@ -11,6 +11,7 @@ import re
 from tqdm import tqdm
 import absl.logging as _logging  # pylint: disable=unused-import
 import tensorflow as tf
+tf.enable_eager_execution()
 import sentencepiece as spm
 import collections
 
@@ -56,7 +57,7 @@ parser.add_argument("--untie_r", action='store_true',
       help="untie r_w_bias and r_r_bias")
 parser.add_argument("--clamp_len", default=-1,
                     help="Clamp length", type=int)
-parser.add_argument("--same_length", default=False,
+parser.add_argument("--same_length", action='store_true', default=False,
                     help="Same length attention")
 parser.add_argument("--tie_weight", type=bool, default=True,
       help="Tie embedding and softmax weight.")
@@ -65,8 +66,8 @@ parser.add_argument("--seq_len", default=70,
       help="Maxmium number of steps in the input", type=int)
 parser.add_argument("--n_token", default=32000, help='vocab size', type=int)
 parser.add_argument("--batch_size", default=1, help='batch size', type=int)
-parser.add_argument("--uncased", default=False,
-                    help="Use uncased inputs or not.", type=bool)
+parser.add_argument("--uncased", default=False, action='store_true',
+                    help="Use uncased inputs or not.")
 
 # I/O paths
 parser.add_argument("--init_checkpoint", default=None,
@@ -94,7 +95,7 @@ parser.add_argument("--max_decode_length", default=1024,
 # NMT specifics
 parser.add_argument("--bi_mask",action="store_true",
                      help="Use bidirectional mask for source tokens")
-parser.add_argument("--use_sos", default=True, type=bool,
+parser.add_argument("--use_sos", default=False, action='store_true',
                     help="whether to use SOS.")
 parser.add_argument("--transliterate", action="store_true",
                   help="Transliterate to hindi.")
@@ -242,9 +243,13 @@ def prediction_graph():
     """
 
 
+    # features = {
+    #     "input": tf.placeholder(tf.int32, (None, None)),
+    #     "input_mask":  tf.placeholder(tf.float32, (None, None))
+    # }
     features = {
-        "input": tf.placeholder(tf.int32, (None, None)),
-        "input_mask":  tf.placeholder(tf.float32, (None, None))
+    "input": tf.ones((2,4),tf.int32),
+    "input_mask": tf.constant([[0,0,1,1],[1,1,1,1]],tf.float32)
     }
     batch_size = tf.shape(features['input'])[0]
     input_tensor = features['input']
