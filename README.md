@@ -1,6 +1,6 @@
 # About
 
-This project builds a translation system between hindi and english. However, it is easily can be adapted to other language pairs with a few changes. The model architecture is a transformer-decoder built on transformer-xl code.
+This project builds a translation system between hindi and english. However, it easily can be adapted to other language pairs with a few changes. The model architecture is a transformer-decoder built on transformer-xl code and implements a novel training procedure.
 
 The research was supported with Cloud TPUs from Google's TensorFlow Research Cloud (TFRC)
 
